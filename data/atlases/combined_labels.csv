@@ -1,0 +1,49 @@
+id,label,source
+1,Left Cerebral White Matter,HarvardOxford-Subcortical
+2,Left Cerebral Cortex,HarvardOxford-Subcortical
+3,Left Lateral Ventricle,HarvardOxford-Subcortical
+4,Left Thalamus,HarvardOxford-Subcortical
+5,Left Caudate,HarvardOxford-Subcortical
+6,Left Putamen,HarvardOxford-Subcortical
+7,Left Pallidum,HarvardOxford-Subcortical
+8,Brain-Stem,HarvardOxford-Subcortical
+9,Left Hippocampus,HarvardOxford-Subcortical
+10,Left Amygdala,HarvardOxford-Subcortical
+11,Left Accumbens,HarvardOxford-Subcortical
+12,Right Cerebral White Matter,HarvardOxford-Subcortical
+13,Right Cerebral Cortex,HarvardOxford-Subcortical
+14,Right Lateral Ventricle,HarvardOxford-Subcortical
+15,Right Thalamus,HarvardOxford-Subcortical
+16,Right Caudate,HarvardOxford-Subcortical
+17,Right Putamen,HarvardOxford-Subcortical
+18,Right Pallidum,HarvardOxford-Subcortical
+19,Right Hippocampus,HarvardOxford-Subcortical
+20,Right Amygdala,HarvardOxford-Subcortical
+21,Right Accumbens,HarvardOxford-Subcortical
+101,Left I-IV,Cerebellum-MNIfnirt
+102,Right I-IV,Cerebellum-MNIfnirt
+103,Left V,Cerebellum-MNIfnirt
+104,Right V,Cerebellum-MNIfnirt
+105,Left VI,Cerebellum-MNIfnirt
+106,Vermis VI,Cerebellum-MNIfnirt
+107,Right VI,Cerebellum-MNIfnirt
+108,Left Crus I,Cerebellum-MNIfnirt
+110,Right Crus I,Cerebellum-MNIfnirt
+111,Left Crus II,Cerebellum-MNIfnirt
+112,Vermis Crus II,Cerebellum-MNIfnirt
+113,Right Crus II,Cerebellum-MNIfnirt
+114,Left VIIb,Cerebellum-MNIfnirt
+115,Vermis VIIb,Cerebellum-MNIfnirt
+116,Right VIIb,Cerebellum-MNIfnirt
+117,Left VIIIa,Cerebellum-MNIfnirt
+118,Vermis VIIIa,Cerebellum-MNIfnirt
+119,Right VIIIa,Cerebellum-MNIfnirt
+120,Left VIIIb,Cerebellum-MNIfnirt
+121,Vermis VIIIb,Cerebellum-MNIfnirt
+122,Right VIIIb,Cerebellum-MNIfnirt
+123,Left IX,Cerebellum-MNIfnirt
+124,Vermis IX,Cerebellum-MNIfnirt
+125,Right IX,Cerebellum-MNIfnirt
+126,Left X,Cerebellum-MNIfnirt
+127,Vermis X,Cerebellum-MNIfnirt
+128,Right X,Cerebellum-MNIfnirt

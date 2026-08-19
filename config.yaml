@@ -1,0 +1,58 @@
+# Configuración Universal del Pipeline de Edad Cerebral (BAG + Medical XAI)
+
+models:
+  checkpoints_dir: "checkpoints"
+  axial:
+    filename: "model_axial_resnet18_soft.pt"
+    backbone: "resnet18"
+    nblock: 6
+    loss_type: "soft"
+    n_classes: 100
+    beta: 0.1306717
+  coronal:
+    filename: "model_coronal_resnet34_smoothl1.pt"
+    backbone: "resnet34"
+    nblock: 8
+    loss_type: "smoothl1"
+    n_classes: 1
+    beta: 0.50210947
+  sagittal:
+    filename: "model_sagittal_resnet18_mse.pt"
+    backbone: "resnet18"
+    nblock: 6
+    loss_type: "mse"
+    n_classes: 1
+    beta: 0.37634322
+  stacker:
+    filename: "ridge_triplanar_ensemble.joblib"
+
+atlases:
+  mask: "data/atlases/mni152_brain_mask_1mm.nii.gz"
+  template: "data/atlases/mni152_t1_1mm_brain.nii.gz"
+  subcortical_atlas: "data/atlases/combined_subcortical_cerebellum_1mm.nii.gz"
+  labels_csv: "data/atlases/combined_labels.csv"
+
+preprocessing:
+  target_shape: [182, 218, 182]
+  p_low: 1.0
+  p_high: 99.0
+  slices:
+    axial: [89, 90, 91, 92, 93]
+    coronal: [107, 108, 109, 110, 111]
+    sagittal: [89, 90, 91, 92, 93]
+
+inference:
+  use_tta: true
+  batch_size: 1
+
+calibration:
+  alpha: -0.226305
+  beta: 16.582412
+
+xai:
+  ig_steps: 50
+  occlusion_patch_size: 32
+  occlusion_stride: 16
+  cluster_filter_threshold: 0.15
+  cluster_min_size: 20
+  sigma_gaussian_3d: 2.55

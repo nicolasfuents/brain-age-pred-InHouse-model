@@ -1,0 +1,37 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+*.egg-info/
+
+# PyTorch checkpoints (>100 MB managed via GitHub Releases / download_checkpoints.py)
+checkpoints/*.pt
+!checkpoints/README.md
+!checkpoints/ridge_triplanar_ensemble.joblib
+
+# Jupyter & IDEs
+.ipynb_checkpoints
+.vscode/
+.idea/
+*.swp
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Processing outputs & temporary runs
+output/
+batch_output/
+tests_output/
+tmp/
+temp/
+extracted_dicom/
+quasiraw/
+*.log

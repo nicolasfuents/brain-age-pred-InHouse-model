@@ -1,0 +1,22 @@
+name: brain_age_env
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch>=2.0.0
+  - torchvision>=0.15.0
+  - nibabel>=5.0.0
+  - pydicom>=2.4.0
+  - scikit-learn>=1.2.0
+  - scipy>=1.10.0
+  - numpy>=1.22.0
+  - pandas>=1.5.0
+  - matplotlib>=3.7.0
+  - seaborn>=0.12.0
+  - scikit-image>=0.20.0
+  - joblib>=1.2.0
+  - pyyaml>=6.0
+  - tqdm>=4.65.0
+  - dcm2niix
