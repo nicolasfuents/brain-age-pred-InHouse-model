@@ -1,5 +1,9 @@
 # Brain Age Prediction (In-House Model & Explainable AI Framework)
 
+<p align="center">
+  <img src="assets/banner.png" alt="Brain Age Prediction & Explainable AI Banner" width="100%">
+</p>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10](https://img.shields.io/badge/Python-3.10-blue.svg)](https://www.python.org/)
 [![PyTorch 2.6](https://img.shields.io/badge/PyTorch-2.6-EE4C2C.svg)](https://pytorch.org/)
@@ -133,23 +137,57 @@ When specifying the `--all` flag, the pipeline automatically generates 3 complem
 
 ## Pipeline Outputs
 
-* **`results.json` / `results.csv`:** Quantitative metrics including per-plane predictions, ensemble prediction, chronological age, `Raw_BAG`, and `bc_BAG` (when calibration is provided).
-* **`tensors/`:** Extracted and normalized 2.5D PyTorch tensors (`tensor_axial.pt`, `tensor_coronal.pt`, `tensor_sagittal.pt`).
-* **`xai/xai_overlays_panel.png` (with `--all`):** High-resolution (300 DPI) visual explanation panel displaying T1 anatomy alongside all 3 XAI overlay maps for each orthogonal plane.
-* **`xai/roi_importance_ig.png` / `roi_importance_occ.png` (with `--all`):** Quantitative regional importance bar charts ranking top anatomical structures from the Harvard-Oxford subcortical and SUIT cerebellar atlases.
+All subject results and intermediate artifacts are organized in a clean directory structure:
+
+```text
+output_directory/
+├── results.json                        # Quantitative metrics (Predicted Age, Raw BAG, bc-BAG)
+├── results.csv                         # Consolidated tabular record for cohort analysis
+├── tensors/                            # Preprocessed NIfTIs, PyTorch tensors, and QC
+│   ├── <ID>_preprocessed_MNI152.nii.gz # 3D volume aligned to MNI152 (1mm isovoxel)
+│   ├── <ID>_slices_axial_5c.nii.gz     # 5 central axial slices NIfTI (Z = 89..93)
+│   ├── <ID>_slices_coronal_5c.nii.gz   # 5 central coronal slices NIfTI (Y = 107..111)
+│   ├── <ID>_slices_sagittal_5c.nii.gz  # 5 central sagittal slices NIfTI (X = 89..93)
+│   ├── tensor_axial.pt                 # Normalized PyTorch tensor (5, 182, 218)
+│   ├── tensor_coronal.pt               # Normalized PyTorch tensor (5, 182, 182)
+│   ├── tensor_sagittal.pt              # Normalized PyTorch tensor (5, 218, 182)
+│   ├── preprocessing_qc_report.png     # Visual QC panel (3x5 grid with brain mask boundary)
+│   └── preprocessing_qc_metrics.json   # Contrast normalisation (P1, P99) and voxel statistics
+└── xai/                                # Explainable AI suite (with --all)
+    ├── xai_overlays_panel.png          # High-resolution (300 DPI) multi-method visual panel
+    ├── roi_importance_ig.png & .csv    # Subcortical & cerebellar ROI rankings (Integrated Gradients)
+    └── roi_importance_occ.png & .csv   # Subcortical & cerebellar ROI rankings (Occlusion Sensitivity)
+```
 
 ---
 
 ## Performance & Benchmark
 
-Evaluated on the **OpenBHB Test Benchmark** ($N = 672$ independent healthy controls):
+The architecture was developed and benchmarked on a multicenter dataset comprising **N = 7,453 subjects** in the derivation set (OpenBHB, ADNI3, Cam-CAN, AOMIC, OpenNeuro, JUK) and evaluated on independent external cohorts:
 
-| Model Component | Architecture | Loss Function | Input Plane | Test MAE (Years) |
+### 1. Internal Validation Benchmark ($N = 1,540$)
+
+| Model Component | Architecture | Loss Function | Input Plane | Validation MAE | Stacker Weight ($\beta$) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Axial Specialist** | ResNet-18 (nblock=6) | Soft-label Cross Entropy ($\sigma=1.0$) | Transverse ($5 \times 182 \times 218$) | 2.87 yr | $\beta = 0.1307$ |
+| **Coronal Specialist** | ResNet-34 (nblock=8) | Smooth L1 Loss | Coronal ($5 \times 182 \times 182$) | 2.84 yr | $\beta = 0.5021$ |
+| **Sagittal Specialist**| ResNet-18 (nblock=6) | Mean Squared Error (MSE) | Sagittal ($5 \times 218 \times 182$) | 3.09 yr | $\beta = 0.3763$ |
+| **Triplanar Ensemble** | Late Fusion Ridge Stacker | - | Triplanar ($15\text{ channels}$) | **2.57 yr** | - |
+
+*Ensemble Synergy:* Late-fusion Ridge stacking yielded a significant error reduction of **$\Delta = -0.30\text{ years}$** over the best standalone specialist model ($p < 0.001$).
+
+### 2. External Validation & Multi-Site Generalization (Out-of-Distribution / OOD)
+
+Evaluated across independent acquisition protocols and field strengths without re-training:
+
+| External Cohort | Scanner / Field Strength | Sample Size | MAE (Years) | Pearson $r$ |
 | :--- | :--- | :--- | :--- | :--- |
-| **Axial Specialist** | ResNet-18 (nblock=6) | Soft-label Cross Entropy | Transverse ($182 \times 218 \times 5$) | 2.87 yr |
-| **Coronal Specialist** | ResNet-34 (nblock=8) | Smooth L1 Loss | Coronal ($182 \times 182 \times 5$) | 2.94 yr |
-| **Sagittal Specialist**| ResNet-18 (nblock=6) | Mean Squared Error (MSE) | Sagittal ($218 \times 182 \times 5$) | 3.12 yr |
-| **Triplanar Ensemble** | Ridge Stacker | - | Triplanar ($15\text{ channels total}$) | **2.56 yr** |
+| **ADNI** | Multicenter (1.5T / 3.0T) | $N = 143$ | **3.97 ± 0.43 yr** | $r = 0.835$ |
+| **OASIS-3** | Siemens / 3.0T | $N = 813$ | **4.08 ± 0.11 yr** | $r = 0.832$ |
+| **RRIB** | Siemens Tim Trio / 3.0T | $N = 65$ | **4.08 ± 0.30 yr** | $r = 0.958$ |
+| **INTECNUS** | Philips Ingenia / 3.0T | $N = 48$ | **4.26 ± 0.47 yr** | $r = 0.892$ |
+| **UNSAM** | GE Signa HDxt / 1.5T | $N = 45$ | **4.61 ± 0.52 yr** | $r = 0.884$ |
+| **CERMEP** | Siemens Sonata / 1.5T | $N = 30$ | **5.46 ± 0.83 yr** | $r = 0.814$ |
 
 ---
 

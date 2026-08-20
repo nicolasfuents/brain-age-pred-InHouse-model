@@ -237,7 +237,7 @@ def run_single_subject(
             patient_id=patient_id,
             save_qc=True
         )
-        print(f"  * [✓] Preprocessing QC report and NIfTI slice stacks saved to: {output_dir / 'qc'}")
+        print(f"  * [✓] Preprocessing QC report and NIfTI slice stacks saved to: {output_dir / 'tensors'}")
 
     # 5. Triplanar Inference & Ridge Stacker (TTA active)
     checkpoints_dir = REPO_ROOT / config["models"]["checkpoints_dir"]

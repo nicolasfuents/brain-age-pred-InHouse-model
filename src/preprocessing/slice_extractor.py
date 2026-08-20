@@ -5,7 +5,7 @@ slice_extractor.py
 
 Applies the SOLID_v2 intracranial brain mask, performs robust P1-P99 contrast normalization to [0, 1],
 extracts 2.5D triplanar 5-slice stacks for Axial, Coronal, and Sagittal planes,
-saves preprocessed NIfTI slice volumes and generates a standardized Preprocessing Quality Control (QC) visual report.
+saves preprocessed NIfTI slice volumes, PyTorch .pt tensors, and generates a Preprocessing Quality Control (QC) visual report.
 """
 
 from pathlib import Path
@@ -153,47 +153,46 @@ def process_nifti_to_tensors(
     patient_id: str = "PATIENT",
     save_qc: bool = True
 ) -> Dict[str, torch.Tensor]:
-    """Complete extraction pipeline from MNI NIfTI to tensors, NIfTI slice stacks, and QC report."""
+    """
+    Extracts triplanar tensors and preprocessed NIfTI slice stacks into tensors_dir.
+    All tensors, preprocessed NIfTI volumes and visual QC report are consolidated in tensors_dir.
+    """
     norm_vol, mask, stats, src_nii = load_and_preprocess_volume(nii_path, mask_path)
     tensors = extract_triplanar_tensors(norm_vol)
     
     if output_dir:
-        output_dir = Path(output_dir)
-        tensors_dir = output_dir if output_dir.name == "tensors" else output_dir / "tensors"
+        tensors_dir = Path(output_dir)
         tensors_dir.mkdir(parents=True, exist_ok=True)
         
         # 1. Save PyTorch tensors
         for plane, tensor in tensors.items():
             torch.save(tensor, tensors_dir / f"tensor_{plane}.pt")
             
-        # 2. Save preprocessed NIfTI slice stacks and 3D volume
-        qc_dir = output_dir.parent / "qc" if output_dir.name == "tensors" else output_dir / "qc"
-        qc_dir.mkdir(parents=True, exist_ok=True)
-        
+        # 2. Save preprocessed NIfTI volumes directly in tensors/
         affine = src_nii.affine
         header = src_nii.header
         
-        # Save 3D preprocessed volume
+        # Preprocessed 3D volume
         prep_3d_nii = nib.Nifti1Image(norm_vol, affine, header)
-        nib.save(prep_3d_nii, str(qc_dir / f"{patient_id}_preprocessed_MNI152.nii.gz"))
+        nib.save(prep_3d_nii, str(tensors_dir / f"{patient_id}_preprocessed_MNI152.nii.gz"))
         
-        # Save slice stacks
+        # Slices 5-channel NIfTI volumes
         axial_nii = nib.Nifti1Image(norm_vol[:, :, 89:94], affine, header)
-        nib.save(axial_nii, str(qc_dir / f"{patient_id}_slices_axial_5c.nii.gz"))
+        nib.save(axial_nii, str(tensors_dir / f"{patient_id}_slices_axial_5c.nii.gz"))
         
         coronal_nii = nib.Nifti1Image(norm_vol[:, 107:112, :], affine, header)
-        nib.save(coronal_nii, str(qc_dir / f"{patient_id}_slices_coronal_5c.nii.gz"))
+        nib.save(coronal_nii, str(tensors_dir / f"{patient_id}_slices_coronal_5c.nii.gz"))
         
         sagittal_nii = nib.Nifti1Image(norm_vol[89:94, :, :], affine, header)
-        nib.save(sagittal_nii, str(qc_dir / f"{patient_id}_slices_sagittal_5c.nii.gz"))
+        nib.save(sagittal_nii, str(tensors_dir / f"{patient_id}_slices_sagittal_5c.nii.gz"))
         
-        # Save QC summary JSON
-        with open(qc_dir / "preprocessing_qc_metrics.json", "w", encoding="utf-8") as f:
+        # QC metrics JSON
+        with open(tensors_dir / "preprocessing_qc_metrics.json", "w", encoding="utf-8") as f:
             json.dump(stats, f, indent=4)
             
-        # 3. Generate Visual QC Report PNG
+        # 3. Visual QC Report PNG
         if save_qc:
-            qc_png = qc_dir / "preprocessing_qc_report.png"
+            qc_png = tensors_dir / "preprocessing_qc_report.png"
             generate_preprocessing_qc_report(norm_vol, mask, stats, qc_png, patient_id=patient_id)
             
     return tensors
