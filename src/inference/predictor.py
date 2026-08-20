@@ -19,24 +19,22 @@ import joblib
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from ..models.gl_transformer import GlobalLocalTransformer
-from ..models.ridge_stacker import RidgeStacker
+from src.models.global_local_transformer import GlobalLocalTransformer
 
 class TriplanarPredictor:
     def __init__(
         self, 
         checkpoints_dir: Path, 
-        device: Optional[str] = None,
+        device: Optional[torch.device] = None,
         use_tta: bool = True
     ):
         self.checkpoints_dir = Path(checkpoints_dir)
+        self.device = device or (torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         self.use_tta = use_tta
         
-        if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device(device)
-            
+        # Bins for Soft Labels (1 to 100 years)
+        self.bins = torch.arange(1, 101, dtype=torch.float32).to(self.device)
+        
         self._check_and_download_checkpoints()
         self._load_models()
         self._load_stacker()
@@ -51,11 +49,12 @@ class TriplanarPredictor:
         ]
         missing = [f for f in required if not (self.checkpoints_dir / f).exists()]
         if missing:
+            print(f"[!] Missing checkpoints in {self.checkpoints_dir}: {missing}")
             try:
-                from ..utils.download_weights import ensure_checkpoints
+                from download_checkpoints import ensure_checkpoints
                 ensure_checkpoints(self.checkpoints_dir)
             except Exception as e:
-                print(f"[!] Could not automatically download weights: {e}")
+                print(f"[!] Could not automatically download checkpoints: {e}")
                 print(f"    Please run 'python download_checkpoints.py' or copy weights into {self.checkpoints_dir}")
 
     def _load_models(self):
@@ -99,19 +98,19 @@ class TriplanarPredictor:
         
         with torch.no_grad():
             outs = self.model_axial(tensor)
-            probs = torch.softmax(outs, dim=1)
-            bins = torch.arange(100, dtype=torch.float32, device=self.device).unsqueeze(0)
-            pred_base = float(torch.sum(probs * bins, dim=1).item())
+            logits = outs[0] if isinstance(outs, (list, tuple)) else outs
+            probs = torch.softmax(logits, dim=1)
+            pred_orig = (probs * self.bins).sum(dim=1).item()
             
             if self.use_tta:
-                # Horizontal anatomical flip
-                flipped = torch.flip(tensor, dims=[-1])
-                outs_flip = self.model_axial(flipped)
-                probs_flip = torch.softmax(outs_flip, dim=1)
-                pred_flip = float(torch.sum(probs_flip * bins, dim=1).item())
-                return (pred_base + pred_flip) / 2.0
-                
-            return pred_base
+                # TTA: Horizontal flip (X-axis)
+                tensor_flip = torch.flip(tensor, dims=[-1])
+                outs_flip = self.model_axial(tensor_flip)
+                logits_flip = outs_flip[0] if isinstance(outs_flip, (list, tuple)) else outs_flip
+                probs_flip = torch.softmax(logits_flip, dim=1)
+                pred_flip = (probs_flip * self.bins).sum(dim=1).item()
+                return (pred_orig + pred_flip) / 2.0
+            return pred_orig
 
     def _forward_coronal(self, tensor: torch.Tensor) -> float:
         """Coronal inference with direct regression and optional TTA."""
@@ -120,23 +119,26 @@ class TriplanarPredictor:
         tensor = tensor.to(self.device)
         
         with torch.no_grad():
-            pred_base = float(self.model_coronal(tensor).item())
+            outs = self.model_coronal(tensor)
+            pred_orig = outs[0].view(-1).item() if isinstance(outs, (list, tuple)) else outs.view(-1).item()
             
             if self.use_tta:
-                flipped = torch.flip(tensor, dims=[-1])
-                pred_flip = float(self.model_coronal(flipped).item())
-                return (pred_base + pred_flip) / 2.0
-                
-            return pred_base
+                # TTA: Horizontal flip
+                tensor_flip = torch.flip(tensor, dims=[-1])
+                outs_flip = self.model_coronal(tensor_flip)
+                pred_flip = outs_flip[0].view(-1).item() if isinstance(outs_flip, (list, tuple)) else outs_flip.view(-1).item()
+                return (pred_orig + pred_flip) / 2.0
+            return pred_orig
 
     def _forward_sagittal(self, tensor: torch.Tensor) -> float:
-        """Sagittal inference with direct regression."""
+        """Sagittal continuous inference with MSE (without TTA to preserve hemispheric asymmetry)."""
         if tensor.ndim == 3:
             tensor = tensor.unsqueeze(0)
         tensor = tensor.to(self.device)
         
         with torch.no_grad():
-            return float(self.model_sagittal(tensor).item())
+            outs = self.model_sagittal(tensor)
+            return outs[0].view(-1).item() if isinstance(outs, (list, tuple)) else outs.view(-1).item()
 
     def predict(self, tensors: Dict[str, torch.Tensor]) -> Dict[str, float]:
         """
@@ -148,15 +150,21 @@ class TriplanarPredictor:
         pred_sag = self._forward_sagittal(tensors["sagittal"])
         
         X_stack = np.array([[pred_ax, pred_cor, pred_sag]], dtype=np.float32)
-        pred_ens = float(self.stacker.predict(X_stack)[0])
+        
+        if isinstance(self.stacker, dict) and "model" in self.stacker:
+            ridge_model = self.stacker["model"]
+        else:
+            ridge_model = self.stacker
+            
+        pred_ensemble = float(ridge_model.predict(X_stack)[0])
         
         return {
             "pred_axial": pred_ax,
             "pred_coronal": pred_cor,
             "pred_sagittal": pred_sag,
-            "pred_ensemble": pred_ens,
+            "pred_ensemble": pred_ensemble,
             "Pred_Axial": pred_ax,
             "Pred_Coronal": pred_cor,
             "Pred_Sagittal": pred_sag,
-            "Pred_Ensemble": pred_ens
+            "Pred_Ensemble": pred_ensemble
         }
