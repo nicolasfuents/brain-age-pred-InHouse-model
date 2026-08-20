@@ -130,9 +130,7 @@ def main():
         help="Generate full XAI attribution suite (IG, Occlusion, Grad-Attention, multi-method panel)."
     )
     parser.add_argument(
-        "--skip_prep", "--skip-prep", 
-        dest="skip_prep", 
-        action="store_true", 
+        "--skip_prep", action="store_true", 
         help="Skip registration and run direct inference on pre-aligned MNI152 volumes or tensors."
     )
     

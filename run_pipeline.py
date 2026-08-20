@@ -161,21 +161,21 @@ def run_single_subject(
     if skip_prep:
         tensors_dir = output_dir / "tensors"
         if input_t1 and (input_t1.suffix == ".pt" or (input_t1.is_dir() and (input_t1 / "tensor_axial.pt").exists())):
-            print(f"\n[+] (--skip-prep) Loading precomputed .pt tensors from: {input_t1}")
+            print(f"\n[+] (--skip_prep) Loading precomputed .pt tensors from: {input_t1}")
             tensors = load_precomputed_tensors(input_t1)
             patient_id = input_t1.stem
         elif tensors_dir.exists() and (tensors_dir / "tensor_axial.pt").exists():
-            print(f"\n[+] (--skip-prep) Reusing existing tensors in: {tensors_dir}")
+            print(f"\n[+] (--skip_prep) Reusing existing tensors in: {tensors_dir}")
             tensors = load_precomputed_tensors(tensors_dir)
             if input_t1: patient_id = input_t1.name.split(".")[0]
         elif input_t1 and (input_t1.name.endswith(".nii") or input_t1.name.endswith(".nii.gz")):
-            print(f"\n[+] (--skip-prep) Direct slice extraction from preprocessed MNI NIfTI volume: {input_t1}")
+            print(f"\n[+] (--skip_prep) Direct slice extraction from preprocessed MNI NIfTI volume: {input_t1}")
             patient_id = input_t1.name.split(".")[0]
             nii = nib.load(str(input_t1))
             if nii.shape != (182, 218, 182):
                 raise ValueError(
                     f"Volume shape {nii.shape} does not match expected MNI152 template (182, 218, 182). "
-                    "Remove --skip-prep to run automated affine registration and N4 bias correction."
+                    "Remove --skip_prep to run automated affine registration and N4 bias correction."
                 )
             mask_path = REPO_ROOT / config["atlases"]["mask"]
             tensors = process_nifti_to_tensors(
@@ -218,7 +218,7 @@ def run_single_subject(
                     f"Native preprocessing requires external tools: {', '.join(missing_tools)}.\n"
                     "Please ensure FSL, ANTs, and FreeSurfer (mri_synthstrip) are installed and available in PATH\n"
                     "(on HPC clusters: 'module load fsl ants freesurfer && source $FSLDIR/etc/fslconf/fsl.sh'),\n"
-                    "or provide a pre-registered MNI152 volume (182, 218, 182) with --skip-prep."
+                    "or provide a pre-registered MNI152 volume (182, 218, 182) with --skip_prep."
                 )
             
             prep_dir = temp_dir / "quasiraw_out"
@@ -340,7 +340,7 @@ def main():
     parser.add_argument("--age", type=float, default=None, help="Chronological age in years (optional for NIfTI, auto-extracted for DICOM).")
     parser.add_argument("--output_dir", type=Path, default=Path("./output"), help="Output directory (default: ./output).")
     parser.add_argument("--all", action="store_true", help="Generate full XAI attribution suite (IG, Occlusion, Grad-Attention, multi-method panel).")
-    parser.add_argument("--skip_prep", "--skip-prep", dest="skip_prep", action="store_true", help="Skip registration and run direct inference on pre-aligned MNI152 volumes or tensors.")
+    parser.add_argument("--skip_prep", action="store_true", help="Skip registration and run direct inference on pre-aligned MNI152 volumes or tensors.")
     
     # Optional calibration parameters
     parser.add_argument("--calibration_file", type=Path, default=None, help="Path to local_calibration_parameters.csv from calibrate_local_scanner.py.")

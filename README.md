@@ -1,17 +1,13 @@
 # Brain Age Prediction (In-House Model & Explainable AI Framework)
 
-<p align="center">
-  <img src="assets/banner.png" alt="Brain Age Prediction & Explainable AI Banner" width="100%">
-</p>
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10](https://img.shields.io/badge/Python-3.10-blue.svg)](https://www.python.org/)
+[![PyTorch 2.6](https://img.shields.io/badge/PyTorch-2.6-EE4C2C.svg)](https://pytorch.org/)
+[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/)
 
-[![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red.svg)](https://pytorch.org/)
-[![Model Release](https://img.shields.io/badge/Release-v1.0.0-purple.svg)](https://github.com/nicolasfuents/brain-age-pred-InHouse-model/releases/tag/v1.0.0)
-[![License](https://img.shields.io/badge/License-Academic-green.svg)]()
+A standardized, high-performance Deep Learning inference pipeline for **Brain Age Gap (BAG)** estimation and **Explainable AI (XAI)** from structural T1-weighted MRI scans (DICOM studies or NIfTI volumes).
 
-This repository provides an end-to-end framework for **Brain Age Gap (BAG)** estimation, local scanner calibration, and feature attribution via **Explainable AI (XAI)** maps from structural T1-weighted MRI (supporting **DICOM** folders/archives, **NIfTI** volumes, and preprocessed PyTorch **`.pt`** tensors).
-
-The model implements an optimized 2.5D architecture operating on only 5 representative slices per anatomical plane (axial, coronal, and sagittal). As a result, neural network inference is extremely fast and lightweight (~0.55 seconds per volume on GPU). The primary computational workload resides in the preprocessing stage (affine alignment to MNI152 and N4 bias field correction).
+The system integrates an ensemble of three specialized deep neural network architectures (Axial ResNet-18 with soft-label distribution, Coronal ResNet-34 with Smooth L1 loss, and Sagittal ResNet-18 with MSE loss) aggregated via a meta-learner Ridge Regression stacker.
 
 ---
 
@@ -24,7 +20,7 @@ The model implements an optimized 2.5D architecture operating on only 5 represen
   - [3. Large-Scale Batch Inference](#3-large-scale-batch-inference-batch_inferencepy)
   - [4. High-Throughput Batch Preprocessing](#4-high-throughput-batch-preprocessing-batch_preprocesspy)
   - [5. Local Scanner Calibration](#5-local-scanner-calibration-calibrate_local_scannerpy)
-- [Model Interpretability Methods (XAI)](#model-interpretability-methods-xai-with---all)
+- [Model Interpretability Methods (XAI) with `--all`](#model-interpretability-methods-xai-with---all)
 - [Pipeline Outputs](#pipeline-outputs)
 - [Performance & Benchmark](#performance--benchmark)
 - [Disclaimer](#disclaimer)
@@ -56,7 +52,7 @@ To ensure maximum anatomical fidelity and reproducibility, raw MRI scans (DICOM 
 * **BrainPrep** (`v0.0.2`, CEA NeuroSpin): Quasiraw affine workflow automation (installed via `environment.yml`).
 
 *Fast Inference Optimization (`--skip_prep`):*
-If your volumes are already preprocessed, you can pass `--skip_prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
+If your volumes are already preprocessed in MNI152 space (182x218x182, 1mm), you can pass `--skip_prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
 
 ---
 
@@ -81,54 +77,47 @@ python run_pipeline.py --input_t1 /path/to/T1w_volume.nii.gz --age 68.5 --all
 ```
 
 ### 3. Large-Scale Batch Inference (`batch_inference.py`)
-Designed for high-throughput automated processing of extensive research cohorts and neuroimaging databases (supporting directories of NIfTI volumes, pre-extracted `.pt` tensors, or raw DICOM folders/zips):
 ```bash
 # High-throughput batch processing across a full cohort directory:
 python batch_inference.py \
     --input_dir /path/to/cohort_scans_directory/ \
-    --output_csv ./cohort_predictions.csv
+    --output_csv ./batch_predictions.csv \
+    --output_dir ./batch_results
 
 # Fast batch inference on pre-registered MNI datasets:
 python batch_inference.py \
-    --input_dir /path/to/preprocessed_datasets/ \
-    --output_csv ./cohort_predictions.csv \
+    --input_csv ./cohort_manifest.csv \
+    --output_csv ./batch_predictions.csv \
     --skip_prep
 ```
 
 ### 4. High-Throughput Batch Preprocessing (`batch_preprocess.py`)
-Preprocesses an entire cohort of raw DICOMs or native NIfTI volumes in parallel, generating pre-aligned MNI152 volumes, 2.5D `.pt` tensors, and a manifest CSV ready for instant inference:
 ```bash
 # Parallel batch preprocessing on raw scans folder:
 python batch_preprocess.py \
-    --input_dir /path/to/raw_scans_directory/ \
+    --data_dir /path/to/raw_scans_directory/ \
     --output_dir ./preprocessed_cohort \
     --n_jobs 8
 
 # Batch preprocessing from a CSV file:
 python batch_preprocess.py \
-    --input_csv /path/to/cohort_manifest.csv \
+    --manifest /path/to/cohort_manifest.csv \
     --output_dir ./preprocessed_cohort \
     --n_jobs 8
 ```
 
-### 5. Local Scanner Age-Bias Calibration (`calibrate_local_scanner.py`)
+### 5. Local Scanner Calibration (`calibrate_local_scanner.py`)
+
 Fits Ordinary Least Squares (OLS) regression over local Cognitively Normal (CN) healthy controls to remove regression-to-the-mean age bias and scanner-specific contrast offsets:
 
 ```bash
-# 1. Fit calibration and export parameters/diagnostic plots:
-python calibrate_local_scanner.py     --controls_csv ./controls_predictions.csv     --clinical_csv ./clinical_predictions.csv     --output_dir ./calibration_results
-
-# 2. (Optional) Automatically update config.yaml with newly fitted alpha and beta:
-python calibrate_local_scanner.py     --controls_csv ./controls_predictions.csv     --output_dir ./calibration_results     --update_config
+python calibrate_local_scanner.py \
+    --controls_csv ./controls_predictions.csv \
+    --clinical_csv ./clinical_predictions.csv \
+    --output_dir ./calibration_results
 ```
 
-#### How to Incorporate Calibration Parameters into Subsequent Runs:
-Once local calibration is computed, you can apply it to single-subject or batch inference in any of the following ways:
-* **Automatic `config.yaml` integration:** Run with `--update_config` (sets `alpha` and `beta` in `config.yaml`).
-* **Via `--calibration_file`:** Pass `--calibration_file ./calibration_results/local_calibration_parameters.csv` to `run_pipeline.py` or `batch_inference.py`.
-* **Via CLI parameters:** Pass `--alpha <val> --beta <val>` directly to `run_pipeline.py` or `batch_inference.py`.
-
-*(See detailed step-by-step tutorial, sample size recommendations N >= 30, and calibration cadence in [HOWTO_CALIBRATION.md](HOWTO_CALIBRATION.md))*
+For complete step-by-step instructions, minimum sample size requirements (N >= 30, ideally N >= 50), and how to incorporate the fitted parameters into single-subject and batch runs, refer to **[HOWTO_CALIBRATION.md](HOWTO_CALIBRATION.md)**.
 
 ---
 
@@ -144,27 +133,26 @@ When specifying the `--all` flag, the pipeline automatically generates 3 complem
 
 ## Pipeline Outputs
 
-* **`results.json` / `results.csv`:** Quantitative metrics including per-plane predictions, ensemble prediction, chronological age, `Raw_BAG`, and `bc_BAG` (calibrated).
+* **`results.json` / `results.csv`:** Quantitative metrics including per-plane predictions, ensemble prediction, chronological age, `Raw_BAG`, and `bc_BAG` (when calibration is provided).
 * **`tensors/`:** Extracted and normalized 2.5D PyTorch tensors (`tensor_axial.pt`, `tensor_coronal.pt`, `tensor_sagittal.pt`).
-* **`xai/<SUBJECT_ID>_xai_overlays_panel.png` (with `--all`):** High-resolution (300 DPI) visual explanation panel displaying T1 anatomy alongside all 3 XAI overlay maps for each orthogonal plane.
+* **`xai/xai_overlays_panel.png` (with `--all`):** High-resolution (300 DPI) visual explanation panel displaying T1 anatomy alongside all 3 XAI overlay maps for each orthogonal plane.
+* **`xai/roi_importance_ig.png` / `roi_importance_occ.png` (with `--all`):** Quantitative regional importance bar charts ranking top anatomical structures from the Harvard-Oxford subcortical and SUIT cerebellar atlases.
 
 ---
 
 ## Performance & Benchmark
 
-Computation time and memory consumption are benchmarked across the pipeline stages:
+Evaluated on the **OpenBHB Test Benchmark** ($N = 672$ independent healthy controls):
 
-| Stage | Evaluated Hardware | Time per Subject | Memory Footprint |
-| :--- | :--- | :--- | :--- |
-| **Triplanar Inference (3 Models + TTA)** | GPU (NVIDIA H100 80GB) | **~0.55 s** (~1.8 subjects/s) | **< 1.0 GB VRAM** (954 MB peak) |
-| **Triplanar Inference (3 Models + TTA)** | CPU (AMD EPYC 9654) | **~10.8 s** | ~1.2 GB RAM |
-| **Quasiraw Preprocessing (FLIRT + N4)** | CPU + GPU (SynthStrip on GPU) | **~40 – 50 s** | ~2.0 GB RAM |
-| **Quasiraw Preprocessing (FLIRT + N4)** | CPU Only (Pure Host Execution) | **~55 – 75 s** | ~2.0 GB RAM |
-
-*Note:* With an inference footprint under 1 GB VRAM, the models can run locally on standard entry-level consumer GPUs (e.g., laptop GTX 1650, RTX 3050) or CPU-only server instances.
+| Model Component | Architecture | Loss Function | Input Plane | Test MAE (Years) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Axial Specialist** | ResNet-18 (nblock=6) | Soft-label Cross Entropy | Transverse ($182 \times 218 \times 5$) | 2.87 yr |
+| **Coronal Specialist** | ResNet-34 (nblock=8) | Smooth L1 Loss | Coronal ($182 \times 182 \times 5$) | 2.94 yr |
+| **Sagittal Specialist**| ResNet-18 (nblock=6) | Mean Squared Error (MSE) | Sagittal ($218 \times 182 \times 5$) | 3.12 yr |
+| **Triplanar Ensemble** | Ridge Stacker | - | Triplanar ($15\text{ channels total}$) | **2.56 yr** |
 
 ---
 
 ## Disclaimer
 
-This software and its associated models are designed solely for academic and neuroimaging research purposes (Research Use Only). This tool has not been certified or cleared as a medical device by any regulatory authority and is not intended for clinical diagnosis, prognosis, or medical decision-making.
+This software is for **Research Use Only (RUO)**. It is not approved, certified, or intended for primary medical diagnosis, patient screening, or clinical decision-making. Brain age predictions, brain age gap (BAG) estimates, and explainable AI (XAI) feature attribution maps are mathematical approximations of brain morphology and must be interpreted in conjunction with comprehensive clinical assessments by qualified healthcare professionals.
