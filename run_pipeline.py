@@ -4,8 +4,8 @@
 """
 run_pipeline.py
 
-Script principal autónomo para inferencia de Edad Cerebral (Brain Age Gap, BAG)
-y explicabilidad mediante Explainable AI (XAI: Integrated Gradients, Occlusion Sensitivity, Grad-Attention).
+Main end-to-end orchestration pipeline for Brain Age Gap (BAG) estimation
+and Explainable AI (XAI) feature attribution maps (Integrated Gradients, Occlusion Sensitivity, Grad-Attention).
 """
 
 import sys
@@ -83,18 +83,15 @@ def run_single_subject(
     if skip_prep:
         tensors_dir = output_dir / "tensors"
         if input_t1 and (input_t1.suffix == ".pt" or (input_t1.is_dir() and (input_t1 / "tensor_axial.pt").exists())):
-            print(f"
-[+] (--skip-prep) Loading precomputed .pt tensors from: {input_t1}")
+            print(f"\n[+] (--skip-prep) Loading precomputed .pt tensors from: {input_t1}")
             tensors = load_precomputed_tensors(input_t1)
             patient_id = input_t1.stem
         elif tensors_dir.exists() and (tensors_dir / "tensor_axial.pt").exists():
-            print(f"
-[+] (--skip-prep) Reusing existing tensors in: {tensors_dir}")
+            print(f"\n[+] (--skip-prep) Reusing existing tensors in: {tensors_dir}")
             tensors = load_precomputed_tensors(tensors_dir)
             if input_t1: patient_id = input_t1.name.split(".")[0]
         elif input_t1 and (input_t1.name.endswith(".nii") or input_t1.name.endswith(".nii.gz")):
-            print(f"
-[+] (--skip-prep) Direct slice extraction from preprocessed MNI NIfTI volume: {input_t1}")
+            print(f"\n[+] (--skip-prep) Direct slice extraction from preprocessed MNI NIfTI volume: {input_t1}")
             patient_id = input_t1.name.split(".")[0]
             nii = nib.load(str(input_t1))
             if nii.shape != (182, 218, 182):
@@ -112,8 +109,7 @@ def run_single_subject(
     if tensors is None:
         # 2. Ingesta y conversión inicial (DICOM vs NIfTI)
         if input_dicom:
-            print(f"
-[+] Ingesting DICOM study from: {input_dicom}")
+            print(f"\n[+] Ingesting DICOM study from: {input_dicom}")
             dicom_dir = handle_input_path(input_dicom, temp_dir)
             d_name, d_age = extract_patient_info(dicom_dir)
             if d_name != "UNKNOWN_PATIENT":
@@ -125,8 +121,7 @@ def run_single_subject(
             print("  * Converting DICOM series to NIfTI (dcm2niix)...")
             nifti_path = convert_dicom_to_nifti(dicom_dir, temp_dir / "nifti_raw")
         elif input_t1:
-            print(f"
-[+] Ingesting NIfTI T1w volume: {input_t1}")
+            print(f"\n[+] Ingesting NIfTI T1w volume: {input_t1}")
             nifti_path = input_t1
             patient_id = nifti_path.name.split(".")[0]
         else:
@@ -135,16 +130,16 @@ def run_single_subject(
         # 3. Comprobación de dimensiones espaciales (Nativo vs MNI152)
         nii = nib.load(str(nifti_path))
         if nii.shape != (182, 218, 182):
-            print(f"
-[+] Input volume is in native space {nii.shape}. Running automated quasiraw preprocessing (FLIRT + N4)...")
+            print(f"\n[+] Input volume is in native space {nii.shape}. Running automated quasiraw preprocessing (SynthStrip + FLIRT + N4)...")
             missing_tools = []
             for tool in ["mri_synthstrip", "brainprep"]:
                 if shutil.which(tool) is None:
                     missing_tools.append(tool)
             if missing_tools:
                 raise EnvironmentError(
-                    f"Native preprocessing requires external tools: {', '.join(missing_tools)}. "
-                    "Please ensure FSL, ANTs, and FreeSurfer/SynthStrip are in your PATH (e.g. 'module load fsl ants freesurfer' on HPC) "
+                    f"Native preprocessing requires external neuroimaging tools: {', '.join(missing_tools)}.\n"
+                    "Please ensure FSL, ANTs, and FreeSurfer (mri_synthstrip) are installed and available in PATH\n"
+                    "(on HPC clusters: 'module load fsl ants freesurfer && source $FSLDIR/etc/fslconf/fsl.sh'),\n"
                     "or provide a pre-registered MNI152 volume (182, 218, 182) with --skip-prep."
                 )
             
@@ -164,8 +159,7 @@ def run_single_subject(
 
         # 4. Extracción de pilas 2.5D y normalización P1-P99
         mask_path = REPO_ROOT / config["atlases"]["mask"]
-        print(f"
-[+] Extracting 2.5D slices and normalizing intensities (P1-P99)...")
+        print(f"\n[+] Extracting 2.5D slices and normalizing intensities (P1-P99)...")
         tensors = process_nifti_to_tensors(
             nii_path=nifti_path,
             mask_path=mask_path,
@@ -175,8 +169,7 @@ def run_single_subject(
 
     # 5. Inferencia Triplanar y Ensamble Ridge (TTA siempre activo)
     checkpoints_dir = REPO_ROOT / config["models"]["checkpoints_dir"]
-    print(f"
-[+] Running triplanar inference with Test-Time Augmentation (TTA)...")
+    print(f"\n[+] Running triplanar inference with Test-Time Augmentation (TTA)...")
     predictor = TriplanarPredictor(checkpoints_dir=checkpoints_dir, use_tta=True)
     predictions = predictor.predict(tensors)
     
@@ -202,8 +195,7 @@ def run_single_subject(
         "bc_bag": bag_results["bc_bag"]
     }
     
-    print("
-" + "="*50)
+    print("\n" + "="*50)
     print(f" RESULTADOS FINALES DE EDAD CEREBRAL ({patient_id})")
     print("="*50)
     if chronological_age is not None:
@@ -224,13 +216,11 @@ def run_single_subject(
         
     csv_path = output_dir / "results.csv"
     pd.DataFrame([final_results]).to_csv(csv_path, index=False)
-    print(f"
-[✓] Métricas cuantitativas guardadas en: {json_path} y {csv_path}")
+    print(f"\n[✓] Métricas cuantitativas guardadas en: {json_path} y {csv_path}")
 
     # 7. Explicabilidad Médica XAI (Opcional con --all)
     if run_all_xai:
-        print(f"
-[+] Generando mapas de interpretabilidad XAI (--all)...")
+        print(f"\n[+] Generando mapas de interpretabilidad XAI (--all)...")
         xai_dir = output_dir / "xai"
         xai_dir.mkdir(parents=True, exist_ok=True)
         
@@ -280,8 +270,7 @@ def main():
     config = load_config()
     
     if args.input_csv:
-        print(f"
-[+] Iniciando inferencia en lote desde CSV: {args.input_csv}")
+        print(f"\n[+] Iniciando inferencia en lote desde CSV: {args.input_csv}")
         df = pd.read_csv(args.input_csv)
         all_results = []
         for idx, row in df.iterrows():
@@ -303,8 +292,7 @@ def main():
             
         summary_csv = args.output_dir / "batch_summary.csv"
         pd.DataFrame(all_results).to_csv(summary_csv, index=False)
-        print(f"
-[✓] Inferencia en lote finalizada. Resumen guardado en: {summary_csv}")
+        print(f"\n[✓] Inferencia en lote finalizada. Resumen guardado en: {summary_csv}")
     else:
         run_single_subject(
             input_dicom=args.input_dicom,
