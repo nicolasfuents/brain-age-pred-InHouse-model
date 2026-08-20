@@ -1,4 +1,4 @@
-# Brain Age Prediction (In-House 2.5D Ensemble & Explainable AI Framework)
+# Brain Age Prediction (In-House Model & Explainable AI Framework)
 
 <p align="center">
   <img src="assets/banner.png" alt="Brain Age Prediction & Explainable AI Banner" width="100%">
