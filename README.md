@@ -87,3 +87,17 @@ Al especificar la bandera opcional `--all`, el pipeline genera automáticamente 
 * **`results.json` / `results.csv`:** Predicciones cuantitativas para cada plano, predicción consolidada del ensamble, edad cronológica, `Raw_BAG` y `bc_BAG` (calibrado).
 * **`tensors/`:** Tensores PyTorch 2.5D (`tensor_axial.pt`, `tensor_coronal.pt`, `tensor_sagittal.pt`) extraídos y normalizados.
 * **`xai/<PATIENT_ID>_xai_diagnostic_panel.png` (con `--all`):** Panel visual de alta resolución (300 DPI) con la anatomía T1 y los 3 mapas de explicabilidad (IG, Occlusión y Grad-Attention) por cada plano.
+
+---
+
+## Rendimiento y Benchmark
+
+El tiempo de procesamiento y consumo de memoria del framework se divide en dos fases:
+
+| Etapa | Hardware Evaluado | Tiempo por Sujeto | Huella de Memoria |
+| :--- | :--- | :--- | :--- |
+| **Inferencia Triplanar (3 Modelos + TTA)** | GPU (NVIDIA H100 80GB) | **~0.55 s** (~1.8 sujetos/s) | **< 1.0 GB VRAM** (pico 954 MB) |
+| **Inferencia Triplanar (3 Modelos + TTA)** | CPU (AMD EPYC 9654) | **~10.8 s** | ~1.2 GB RAM |
+| **Preprocesamiento Quasiraw (FLIRT + N4)** | CPU / GPU | **~45 – 60 s** | ~2.0 GB RAM |
+
+*Nota:* Al requerir menos de 1 GB de VRAM durante la inferencia, el framework puede ejecutarse en GPUs comerciales de gama de entrada (e.g. GTX 1650, RTX 3050 de laptop) o en servidores que operen exclusivamente sobre CPU.
