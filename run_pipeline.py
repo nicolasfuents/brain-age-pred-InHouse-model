@@ -233,11 +233,12 @@ def run_single_subject(
         tensors = process_nifti_to_tensors(
             nii_path=nifti_path,
             mask_path=mask_path,
-            output_dir=output_dir / "tensors",
+            output_dir=output_dir,
             patient_id=patient_id,
             save_qc=True
         )
-        print(f"  * [✓] Preprocessing QC report and NIfTI slice stacks saved to: {output_dir / 'tensors'}")
+        print(f"  * [✓] Preprocessed NIfTI volumes & QC report saved to: {output_dir / 'prep'}")
+        print(f"  * [✓] PyTorch 2.5D tensors saved to: {output_dir / 'tensors'}")
 
     # 5. Triplanar Inference & Ridge Stacker (TTA active)
     checkpoints_dir = REPO_ROOT / config["models"]["checkpoints_dir"]

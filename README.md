@@ -143,16 +143,17 @@ All subject results and intermediate artifacts are organized in a clean director
 output_directory/
 ├── results.json                        # Quantitative metrics (Predicted Age, Raw BAG, bc-BAG)
 ├── results.csv                         # Consolidated tabular record for cohort analysis
-├── tensors/                            # Preprocessed NIfTIs, PyTorch tensors, and QC
+├── prep/                               # Preprocessed NIfTI volumes and QC report
 │   ├── <ID>_preprocessed_MNI152.nii.gz # 3D volume aligned to MNI152 (1mm isovoxel)
 │   ├── <ID>_slices_axial_5c.nii.gz     # 5 central axial slices NIfTI (Z = 89..93)
 │   ├── <ID>_slices_coronal_5c.nii.gz   # 5 central coronal slices NIfTI (Y = 107..111)
 │   ├── <ID>_slices_sagittal_5c.nii.gz  # 5 central sagittal slices NIfTI (X = 89..93)
-│   ├── tensor_axial.pt                 # Normalized PyTorch tensor (5, 182, 218)
-│   ├── tensor_coronal.pt               # Normalized PyTorch tensor (5, 182, 182)
-│   ├── tensor_sagittal.pt              # Normalized PyTorch tensor (5, 218, 182)
 │   ├── preprocessing_qc_report.png     # Visual QC panel (3x5 grid with brain mask boundary)
-│   └── preprocessing_qc_metrics.json   # Contrast normalisation (P1, P99) and voxel statistics
+│   └── preprocessing_qc_metrics.json   # Contrast normalization (P1, P99) and voxel statistics
+├── tensors/                            # Normalized PyTorch .pt tensors
+│   ├── tensor_axial.pt                 # Axial tensor (5, 182, 218)
+│   ├── tensor_coronal.pt               # Coronal tensor (5, 182, 182)
+│   └── tensor_sagittal.pt              # Sagittal tensor (5, 218, 182)
 └── xai/                                # Explainable AI suite (with --all)
     ├── xai_overlays_panel.png          # High-resolution (300 DPI) multi-method visual panel
     ├── roi_importance_ig.png & .csv    # Subcortical & cerebellar ROI rankings (Integrated Gradients)
