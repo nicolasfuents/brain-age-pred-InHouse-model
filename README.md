@@ -55,7 +55,7 @@ To ensure maximum anatomical fidelity and reproducibility, raw MRI scans (DICOM 
 * **dcm2niix**: High-performance DICOM-to-NIfTI conversion.
 
 *Fast Inference Optimization (`--skip-prep`):*
-If your volumes are already aligned to MNI152 1mm space (`182 x 218 x 182`), you can pass `--skip-prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
+If your volumes are already preprocessed, you can pass `--skip-prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
 
 ---
 
