@@ -44,7 +44,21 @@ conda env create -f environment.yml
 conda activate brain_age_env
 ```
 
-*Note:* Ensure `dcm2niix` is installed on your system for automatic DICOM conversion.
+### 3. System Dependencies
+
+The requirements depend on whether you are running direct inference on pre-registered MNI scans or performing full native preprocessing from scratch:
+
+* **Direct Inference on MNI152 Scans (`--skip-prep`):**
+  * Requires **only** the Conda environment (`environment.yml`).
+  * Self-contained: runs on any standard Linux/macOS/Windows workstation without neuroimaging C++ suites.
+
+* **Native End-to-End Preprocessing (Raw NIfTI / DICOM without `--skip-prep`):**
+  * Requires standard neuroimaging tools installed in your system `PATH`:
+    * **FSL** (`flirt`, `fslreorient2std`): Affine spatial registration to MNI152.
+    * **ANTs** (`N4BiasFieldCorrection`): B-spline bias field homogeneity correction.
+    * **FreeSurfer / SynthStrip** (`mri_synthstrip`): Deep-learning intracranial brain extraction.
+    * **dcm2niix**: Automated DICOM-to-NIfTI conversion.
+  * *(On HPC clusters, load via modules: `module load fsl ants freesurfer dcm2niix`).*
 
 ---
 
