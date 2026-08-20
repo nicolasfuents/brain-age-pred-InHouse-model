@@ -1,5 +1,3 @@
-# Configuración Universal del Pipeline de Edad Cerebral (BAG + Medical XAI)
-
 models:
   checkpoints_dir: "checkpoints"
   axial:
