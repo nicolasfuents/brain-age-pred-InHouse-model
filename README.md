@@ -22,7 +22,8 @@ The model implements an optimized 2.5D architecture operating on only 5 represen
   - [1. Single-Subject Fast Inference](#1-single-subject-fast-inference-run_pipelinepy)
   - [2. Full Inference with Explainable AI](#2-full-inference-with-explainable-ai---all)
   - [3. Large-Scale Batch Inference](#3-large-scale-batch-inference-batch_inferencepy)
-  - [4. Local Scanner Calibration](#4-local-scanner-calibration-calibrate_local_scannerpy)
+  - [4. High-Throughput Batch Preprocessing](#4-high-throughput-batch-preprocessing-batch_preprocesspy)
+  - [5. Local Scanner Calibration](#5-local-scanner-calibration-calibrate_local_scannerpy)
 - [Model Interpretability Methods (XAI)](#model-interpretability-methods-xai-with---all)
 - [Pipeline Outputs](#pipeline-outputs)
 - [Performance & Benchmark](#performance--benchmark)
@@ -44,21 +45,17 @@ conda env create -f environment.yml
 conda activate brain_age_env
 ```
 
-### 3. System Dependencies
+### 3. External Neuroimaging Dependencies (Preprocessing Pipeline)
 
-The requirements depend on whether you are running direct inference on pre-registered MNI scans or performing full native preprocessing from scratch:
+To ensure maximum anatomical fidelity and reproducibility, raw MRI scans (DICOM or native NIfTI) must be processed through the standardized `src/preprocessing/` pipeline. This requires the following standard neuroimaging tools in your system `PATH`:
 
-* **Direct Inference on MNI152 Scans (`--skip-prep`):**
-  * Requires **only** the Conda environment (`environment.yml`).
-  * Self-contained: runs on any standard Linux/macOS/Windows workstation without neuroimaging C++ suites.
+* **FSL** (`flirt`, `fslreorient2std`): 12-DOF rigid/affine registration to MNI152 (1mm).
+* **ANTs** (`N4BiasFieldCorrection`): B-spline non-parametric bias field correction.
+* **FreeSurfer / SynthStrip** (`mri_synthstrip`): Deep-learning intracranial skull stripping and brain mask generation.
+* **dcm2niix**: High-performance DICOM-to-NIfTI conversion.
 
-* **Native End-to-End Preprocessing (Raw NIfTI / DICOM without `--skip-prep`):**
-  * Requires standard neuroimaging tools installed in your system `PATH`:
-    * **FSL** (`flirt`, `fslreorient2std`): Affine spatial registration to MNI152.
-    * **ANTs** (`N4BiasFieldCorrection`): B-spline bias field homogeneity correction.
-    * **FreeSurfer / SynthStrip** (`mri_synthstrip`): Deep-learning intracranial brain extraction.
-    * **dcm2niix**: Automated DICOM-to-NIfTI conversion.
-  * *(On HPC clusters, load via modules: `module load fsl ants freesurfer dcm2niix`).*
+*Fast Inference Optimization (`--skip-prep`):*
+If your volumes are already aligned to MNI152 1mm space (`182 x 218 x 182`), you can pass `--skip-prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
 
 ---
 
@@ -69,7 +66,7 @@ The requirements depend on whether you are running direct inference on pre-regis
 # Inference from DICOM (automatically extracts age from header):
 python run_pipeline.py --input_dicom /path/to/DICOM_study/
 
-# Inference from raw T1w NIfTI volume:
+# Inference from raw T1w NIfTI volume (runs automated SynthStrip + FLIRT + N4):
 python run_pipeline.py --input_t1 /path/to/T1w_volume.nii.gz --age 68.5
 
 # Direct inference on preprocessed MNI volume (skips registration and N4):
@@ -79,7 +76,7 @@ python run_pipeline.py --input_t1 /path/to/preprocessed_MNI_volume.nii.gz --age 
 ### 2. Full Inference with Explainable AI (`--all`)
 ```bash
 # Inference + Integrated Gradients, Occlusion Sensitivity, Grad-Attention & Visual Explanation Panel:
-python run_pipeline.py --input_dicom /path/to/DICOM_study/ --all
+python run_pipeline.py --input_t1 /path/to/T1w_volume.nii.gz --age 68.5 --all
 ```
 
 ### 3. Large-Scale Batch Inference (`batch_inference.py`)
@@ -97,7 +94,23 @@ python batch_inference.py \
     --skip-prep
 ```
 
-### 4. Local Scanner Calibration (`calibrate_local_scanner.py`)
+### 4. High-Throughput Batch Preprocessing (`batch_preprocess.py`)
+Preprocesses an entire cohort of raw DICOMs or native NIfTI volumes in parallel, generating pre-aligned MNI152 volumes, 2.5D `.pt` tensors, and a manifest CSV ready for instant inference:
+```bash
+# Parallel batch preprocessing on raw scans folder:
+python batch_preprocess.py \
+    --input_dir /path/to/raw_scans_directory/ \
+    --output_dir ./preprocessed_cohort \
+    --n_jobs 8
+
+# Batch preprocessing from a CSV file:
+python batch_preprocess.py \
+    --input_csv /path/to/cohort_manifest.csv \
+    --output_dir ./preprocessed_cohort \
+    --n_jobs 8
+```
+
+### 5. Local Scanner Calibration (`calibrate_local_scanner.py`)
 Fits linear regression coefficients on a local Cognitively Normal (CN) healthy control cohort to eliminate regression-to-the-mean age bias and correct target study cohorts:
 ```bash
 python calibrate_local_scanner.py \
