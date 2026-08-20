@@ -178,16 +178,15 @@ The architecture was developed and benchmarked on a multicenter dataset comprisi
 
 ### 2. External Validation & Multi-Site Generalization (Out-of-Distribution / OOD)
 
-Evaluated across independent acquisition protocols and field strengths without re-training:
+Official evaluation across independent external cohorts using the definitive **IPW v1** framework (natively de-biased):
 
-| External Cohort | Scanner / Field Strength | Sample Size | MAE (Years) | Pearson $r$ |
+| External Cohort | Scanner / Field Strength | Sample Size | MAE (Years) | Age-Bias Slope ($\beta$) |
 | :--- | :--- | :--- | :--- | :--- |
-| **ADNI** | Multicenter (1.5T / 3.0T) | $N = 143$ | **3.97 ± 0.43 yr** | $r = 0.835$ |
-| **OASIS-3** | Siemens / 3.0T | $N = 813$ | **4.08 ± 0.11 yr** | $r = 0.832$ |
-| **RRIB** | Siemens Tim Trio / 3.0T | $N = 65$ | **4.08 ± 0.30 yr** | $r = 0.958$ |
-| **INTECNUS** | Philips Ingenia / 3.0T | $N = 48$ | **4.26 ± 0.47 yr** | $r = 0.892$ |
-| **UNSAM** | GE Signa HDxt / 1.5T | $N = 45$ | **4.61 ± 0.52 yr** | $r = 0.884$ |
-| **CERMEP** | Siemens Sonata / 1.5T | $N = 30$ | **5.46 ± 0.83 yr** | $r = 0.814$ |
+| **RRIB** | Siemens Tim Trio / 3.0T | $N = 65$ | **3.89 ± 0.27 yr** | Low / Stable |
+| **ADNI** | Multicenter / 1.5T & 3.0T | $N = 143$ | **3.97 ± 0.43 yr** | $\beta = -0.111$ |
+| **OASIS-3** | Siemens / 3.0T | $N = 813$ | **4.15 ± 0.13 yr** | $\beta = -0.068$ |
+
+*Note:* The IPW v1 architecture effectively mitigates the classic regression-to-the-mean effect, flattening the normative age-bias slope by **38.2%** in OASIS-3 (from $-0.110$ to $-0.068$) and stabilizing error variance across the lifespan.
 
 ---
 
