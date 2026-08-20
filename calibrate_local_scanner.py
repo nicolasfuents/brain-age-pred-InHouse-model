@@ -17,6 +17,7 @@ Recommended Usage:
 import os
 import sys
 import argparse
+import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
@@ -26,6 +27,8 @@ import seaborn as sns
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error
 from scipy import stats
+
+REPO_ROOT = Path(__file__).resolve().parent
 
 def fit_local_calibration(df_controls: pd.DataFrame) -> Dict[str, Any]:
     """
@@ -147,6 +150,20 @@ def plot_calibration_results(calib_dict: Dict[str, Any], output_path: Path):
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
     plt.close()
 
+def update_config_file(alpha: float, beta: float, config_path: Path = REPO_ROOT / "config.yaml"):
+    """Updates config.yaml with newly estimated alpha and beta coefficients."""
+    if not config_path.exists():
+        return
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    if "calibration" not in cfg:
+        cfg["calibration"] = {}
+    cfg["calibration"]["alpha"] = float(alpha)
+    cfg["calibration"]["beta"] = float(beta)
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+    print(f"[✓] config.yaml automatically updated with alpha={alpha:.6f} and beta={beta:.6f}.")
+
 def main():
     parser = argparse.ArgumentParser(
         description="Local Scanner Age-Bias Calibration Tool (bc-BAG) for MRI Brain Age Estimation."
@@ -168,6 +185,11 @@ def main():
         type=Path, 
         default=Path("./calibration_output"), 
         help="Output directory for calibration parameters and diagnostic plots (default: ./calibration_output)."
+    )
+    parser.add_argument(
+        "--update_config", 
+        action="store_true", 
+        help="Automatically write estimated alpha and beta into config.yaml for subsequent pipeline runs."
     )
     
     args = parser.parse_args()
@@ -208,6 +230,10 @@ def main():
     plot_calibration_results(calib, fig_path)
     print(f"[✓] Diagnostic calibration plot saved to: {fig_path}")
     
+    # Update config.yaml if requested
+    if args.update_config:
+        update_config_file(calib["alpha"], calib["beta"])
+        
     # Apply calibration to clinical cohort if provided
     if args.clinical_csv and args.clinical_csv.exists():
         print(f"\n[+] Applying local calibration to target cohort: {args.clinical_csv}")
@@ -229,8 +255,16 @@ def main():
         else:
             print("[!] Could not apply calibration: 'age' or 'predicted_age' column missing in clinical CSV.")
             
-    print("="*80)
+    print("\n" + "="*80)
     print(" Local calibration completed successfully.")
+    print("="*80)
+    print(" How to incorporate these calibration coefficients into future runs:")
+    print(f"  1. Automated: Re-run calibration with '--update_config' to save directly to config.yaml:")
+    print(f"       python calibrate_local_scanner.py --controls_csv {args.controls_csv} --update_config")
+    print(f"  2. CLI Flag: Pass '--calibration_file' to run_pipeline.py or batch_inference.py:")
+    print(f"       python run_pipeline.py --input_t1 <path> --age <age> --calibration_file {params_path}")
+    print(f"  3. Direct Parameters: Pass '--alpha {calib['alpha']:.6f} --beta {calib['beta']:.6f}' to run_pipeline.py.")
+    print(f"  4. Manual: In config.yaml, set alpha: {calib['alpha']:.6f} and beta: {calib['beta']:.6f}.")
     print("="*80 + "\n")
 
 if __name__ == "__main__":
