@@ -21,7 +21,7 @@ import json
 import subprocess
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import nibabel as nib
 import numpy as np
 import pandas as pd
@@ -112,6 +112,30 @@ def run_brainprep_quasiraw(input_nii: Path, prep_dir: Path) -> Path:
         raise FileNotFoundError(f"BrainPrep pipeline did not produce desc-6apply file in {prep_dir / 'quasiraw'}")
     return candidates[0]
 
+def resolve_calibration_coefficients(
+    calib_file: Optional[Path],
+    cli_alpha: Optional[float],
+    cli_beta: Optional[float],
+    config_calib: Dict[str, Any]
+) -> Tuple[Optional[float], Optional[float]]:
+    """Resolves alpha and beta calibration coefficients from file, CLI flags, or config.yaml."""
+    if calib_file and calib_file.exists():
+        df_cal = pd.read_csv(calib_file)
+        if "alpha_slope" in df_cal.columns and "beta_site_intercept" in df_cal.columns:
+            return float(df_cal["alpha_slope"].iloc[0]), float(df_cal["beta_site_intercept"].iloc[0])
+        elif "alpha" in df_cal.columns and "beta" in df_cal.columns:
+            return float(df_cal["alpha"].iloc[0]), float(df_cal["beta"].iloc[0])
+            
+    if cli_alpha is not None and cli_beta is not None:
+        return float(cli_alpha), float(cli_beta)
+        
+    cfg_a = config_calib.get("alpha")
+    cfg_b = config_calib.get("beta")
+    if cfg_a is not None and cfg_b is not None:
+        return float(cfg_a), float(cfg_b)
+        
+    return None, None
+
 def run_single_subject(
     input_dicom: Optional[Path],
     input_t1: Optional[Path],
@@ -119,7 +143,10 @@ def run_single_subject(
     output_dir: Path,
     run_all_xai: bool,
     config: Dict[str, Any],
-    skip_prep: bool = False
+    skip_prep: bool = False,
+    calib_file: Optional[Path] = None,
+    alpha: Optional[float] = None,
+    beta: Optional[float] = None
 ) -> Dict[str, Any]:
     """Runs the end-to-end brain age estimation pipeline for a single subject."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -220,13 +247,16 @@ def run_single_subject(
     # 6. Brain Age Gap (Raw BAG) & Optional Local Bias Correction
     raw_bag_val = round(pred_ens_val - chronological_age, 2) if chronological_age is not None else None
     
-    calib_cfg = config.get("calibration", {})
-    alpha = calib_cfg.get("alpha", None)
-    beta = calib_cfg.get("beta", None)
+    resolved_alpha, resolved_beta = resolve_calibration_coefficients(
+        calib_file=calib_file,
+        cli_alpha=alpha,
+        cli_beta=beta,
+        config_calib=config.get("calibration", {})
+    )
     
     bc_bag_val = None
-    if raw_bag_val is not None and alpha is not None and beta is not None:
-        bc_bag_val = round(raw_bag_val - (float(alpha) * chronological_age + float(beta)), 2)
+    if raw_bag_val is not None and resolved_alpha is not None and resolved_beta is not None:
+        bc_bag_val = round(raw_bag_val - (resolved_alpha * chronological_age + resolved_beta), 2)
 
     # Consolidate results
     final_results = {
@@ -250,7 +280,7 @@ def run_single_subject(
     if chronological_age is not None:
         print(f"  * Brain Age Gap (Raw BAG):    {final_results['raw_bag']:+.2f} years")
         if bc_bag_val is not None:
-            print(f"  * Calibrated Gap (bc-BAG):    {final_results['bc_bag']:+.2f} years (local calibration)")
+            print(f"  * Calibrated Gap (bc-BAG):    {final_results['bc_bag']:+.2f} years (local calibration applied)")
     print("-"*80)
     print(" Interpretation & Guidelines:")
     print("  - Predicted Brain Age: Model-estimated biological brain age from triplanar MRI.")
@@ -267,7 +297,7 @@ def run_single_subject(
             print("    * Re-calibration is recommended periodically when adding new control batches")
             print("      (e.g., every 50-100 new scans or following major scanner software/hardware updates).")
         else:
-            print("  - Calibrated bc-BAG: Bias-corrected gap using your local scanner calibration parameters.")
+            print(f"  - Calibrated bc-BAG: Bias-corrected gap using local parameters (alpha={resolved_alpha:.4f}, beta={resolved_beta:.4f}).")
     print("="*80)
 
     # Save quantitative metrics to JSON and CSV
@@ -312,6 +342,11 @@ def main():
     parser.add_argument("--all", action="store_true", help="Generate full XAI attribution suite (IG, Occlusion, Grad-Attention, multi-method panel).")
     parser.add_argument("--skip_prep", "--skip-prep", dest="skip_prep", action="store_true", help="Skip registration and run direct inference on pre-aligned MNI152 volumes or tensors.")
     
+    # Optional calibration parameters
+    parser.add_argument("--calibration_file", type=Path, default=None, help="Path to local_calibration_parameters.csv from calibrate_local_scanner.py.")
+    parser.add_argument("--alpha", type=float, default=None, help="Custom local calibration slope (alpha).")
+    parser.add_argument("--beta", type=float, default=None, help="Custom local calibration site intercept (beta).")
+    
     args = parser.parse_args()
     config = load_config()
     
@@ -332,7 +367,10 @@ def main():
                 output_dir=subj_dir,
                 run_all_xai=args.all,
                 config=config,
-                skip_prep=args.skip_prep
+                skip_prep=args.skip_prep,
+                calib_file=args.calibration_file,
+                alpha=args.alpha,
+                beta=args.beta
             )
             all_results.append(res)
             
@@ -347,7 +385,10 @@ def main():
             output_dir=args.output_dir,
             run_all_xai=args.all,
             config=config,
-            skip_prep=args.skip_prep
+            skip_prep=args.skip_prep,
+            calib_file=args.calibration_file,
+            alpha=args.alpha,
+            beta=args.beta
         )
 
 if __name__ == "__main__":
