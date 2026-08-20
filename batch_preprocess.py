@@ -4,14 +4,11 @@
 """
 batch_preprocess.py
 
-High-throughput batch preprocessing pipeline for raw neuroimaging cohorts (DICOM series and native NIfTI volumes).
-Orchestrates:
-  1. DICOM to NIfTI conversion (dcm2niix).
-  2. Brain extraction & Skull Stripping (mri_synthstrip).
-  3. 12-DOF Affine registration to MNI152 1mm (FSL flirt).
-  4. B-spline bias field correction (ANTs N4BiasFieldCorrection).
-  5. SOLID_v2 intracranial masking, robust P1-P99 intensity normalization, and 2.5D triplanar tensor extraction.
-  6. Generates a consolidated manifest CSV ready for instant batch inference with --skip-prep.
+High-Throughput Parallel Batch Preprocessing Pipeline for MRI Datasets.
+Prepares cohorts of raw T1w MRI scans (DICOM studies or native NIfTI volumes)
+by running automated skull-stripping (mri_synthstrip), 12-DOF affine FLIRT registration
+and N4 bias field correction to MNI152 (1mm), and extracting normalized 2.5D triplanar slice tensors.
+Outputs a standardized manifest CSV ready for batch inference.
 """
 
 import sys
@@ -22,12 +19,10 @@ import subprocess
 import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-import nibabel as nib
-import numpy as np
-import pandas as pd
-import torch
-from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import nibabel as nib
+import pandas as pd
+from tqdm import tqdm
 
 REPO_ROOT = Path(__file__).resolve().parent
 sys.path.append(str(REPO_ROOT))
@@ -36,32 +31,34 @@ from src.preprocessing.dicom_reader import handle_input_path, extract_patient_in
 from src.preprocessing.slice_extractor import process_nifti_to_tensors
 
 def load_config(config_path: Path = REPO_ROOT / "config.yaml") -> Dict[str, Any]:
+    """Loads configuration hyperparameters."""
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-def process_single_subject(
+def process_single_item(
     item: Dict[str, Any],
     output_dir: Path,
     mask_path: Path,
-    save_nifti: bool = True
+    save_nifti: bool = False
 ) -> Dict[str, Any]:
-    """Preprocesa un único sujeto de forma aislada y robusta."""
-    subj_id = item["subject_id"]
+    """Processes a single subject through skull-stripping, registration, and slice extraction."""
+    subj_id = item.get("subject_id", item.get("id", f"sub-{Path(item.get('input_t1', item.get('input_dicom'))).stem}"))
     subj_out_dir = output_dir / subj_id
-    tensors_dir = subj_out_dir / "t1_tensors"
-    tensors_dir.mkdir(parents=True, exist_ok=True)
+    subj_out_dir.mkdir(parents=True, exist_ok=True)
     temp_dir = subj_out_dir / "temp_prep"
     temp_dir.mkdir(parents=True, exist_ok=True)
+    tensors_dir = subj_out_dir / "tensors"
     
     res = {
         "subject_id": subj_id,
         "age": item.get("age", None),
-        "tensor_dir": str(tensors_dir),
+        "tensors_dir": str(tensors_dir),
+        "preprocessed_nii": "",
         "status": "FAILED",
         "error_msg": ""
     }
     
-    # Comprobar si ya está procesado
+    # Check if already processed
     if (tensors_dir / "tensor_axial.pt").exists() and (tensors_dir / "tensor_coronal.pt").exists() and (tensors_dir / "tensor_sagittal.pt").exists():
         res["status"] = "ALREADY_PROCESSED"
         if temp_dir.exists(): shutil.rmtree(temp_dir)
@@ -71,7 +68,7 @@ def process_single_subject(
         raw_nii = None
         chrono_age = item.get("age", None)
         
-        # 1. Ingesta
+        # 1. Ingestion
         if item.get("input_dicom"):
             dcm_p = Path(item["input_dicom"])
             extracted_dcm = handle_input_path(dcm_p, temp_dir)
@@ -83,9 +80,9 @@ def process_single_subject(
         elif item.get("input_t1"):
             raw_nii = Path(item["input_t1"])
         else:
-            raise ValueError("No se especificó input_dicom ni input_t1.")
+            raise ValueError("Must specify either input_dicom or input_t1.")
 
-        # 2. Comprobar dimensiones espaciales (Nativo vs MNI152)
+        # 2. Check spatial dimensions (Native vs MNI152)
         nii = nib.load(str(raw_nii))
         mni_nii = raw_nii
         
@@ -120,16 +117,16 @@ def process_single_subject(
             
             candidates = list((prep_work_dir / "quasiraw").glob("*desc-6apply*.nii.gz"))
             if not candidates:
-                raise FileNotFoundError("El registro quasiraw no generó el archivo desc-6apply.")
+                raise FileNotFoundError("Preprocessing did not produce desc-6apply NIfTI.")
             mni_nii = candidates[0]
             
-        # 3. Guardar NIfTI preprocesado si se solicita
+        # 3. Save preprocessed NIfTI if requested
         if save_nifti:
             final_nii_path = subj_out_dir / f"{subj_id}_preprocessed_MNI152.nii.gz"
             shutil.copyfile(mni_nii, final_nii_path)
             res["preprocessed_nii"] = str(final_nii_path)
-
-        # 4. Extracción 2.5D y normalización P1-P99
+            
+        # 4. Extract 2.5D normalized tensors
         process_nifti_to_tensors(
             nii_path=mni_nii,
             mask_path=mask_path,
@@ -139,55 +136,45 @@ def process_single_subject(
         res["status"] = "SUCCESS"
         
     except Exception as e:
-        res["status"] = "FAILED"
+        res["status"] = "ERROR"
         res["error_msg"] = str(e)
     finally:
         if temp_dir.exists():
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            shutil.rmtree(temp_dir)
             
     return res
 
-def discover_cohort(input_dir: Path) -> List[Dict[str, Any]]:
-    """Descubre automáticamente resonancias en un directorio raíz."""
+def scan_directory_for_inputs(data_dir: Path) -> List[Dict[str, Any]]:
+    """Scans directory hierarchy for T1w NIfTI or DICOM subjects."""
     items = []
+    nii_files = sorted(list(data_dir.rglob("*.nii")) + list(data_dir.rglob("*.nii.gz")))
     
-    # 1. Búsqueda de NIfTI
-    nii_files = sorted(list(input_dir.rglob("*.nii")) + list(input_dir.rglob("*.nii.gz")))
-    # Filtrar tensores o máscaras auxiliares
-    nii_files = [f for f in nii_files if "mask" not in f.name.lower() and "tensor" not in f.name.lower()]
+    # Filter out masks or intermediate files
+    t1_candidates = [
+        f for f in nii_files 
+        if not any(k in f.name.lower() for k in ["mask", "desc-1", "desc-2", "desc-3", "desc-4", "desc-5", "roi"])
+    ]
     
-    if nii_files:
-        for f in nii_files:
-            subj_id = f.name.replace(".nii.gz", "").replace(".nii", "")
-            items.append({
-                "subject_id": subj_id,
-                "input_t1": str(f),
-                "age": None
-            })
-        return items
-
-    # 2. Búsqueda de DICOM (carpetas o .zip)
-    for entry in sorted(input_dir.iterdir()):
-        if entry.is_dir() or entry.suffix.lower() == ".zip":
-            items.append({
-                "subject_id": entry.stem,
-                "input_dicom": str(entry),
-                "age": None
-            })
-            
+    for f in t1_candidates:
+        subj_name = f.stem.replace(".nii", "")
+        items.append({
+            "subject_id": subj_name,
+            "input_t1": str(f),
+            "age": None
+        })
     return items
 
 def main():
     parser = argparse.ArgumentParser(
-        description="High-Throughput Batch Preprocessing Pipeline (Brain Age Prediction & Medical XAI Framework)"
+        description="High-Throughput Parallel Batch Preprocessing Pipeline for MRI Datasets."
     )
-    input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--input_dir", type=Path, help="Ruta a un directorio que contiene escaneos NIfTI o carpetas/archivos DICOM.")
-    input_group.add_argument("--input_csv", type=Path, help="Ruta a un archivo CSV con columnas 'subject_id', 'input_t1'/'input_dicom' y 'age'.")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--manifest", type=Path, help="Input CSV manifest containing input_t1/input_dicom paths.")
+    group.add_argument("--data_dir", type=Path, help="Directory containing raw MRI dataset to auto-discover.")
     
-    parser.add_argument("--output_dir", type=Path, default=Path("./preprocessed_cohort"), help="Directorio donde se guardarán los tensores y NIfTIs preprocesados (por defecto: ./preprocessed_cohort).")
-    parser.add_argument("--n_jobs", type=int, default=4, help="Número de procesos en paralelo (por defecto: 4).")
-    parser.add_argument("--save_nifti", action="store_true", default=True, help="Guarda también el volumen NIfTI preprocesado en espacio MNI152 (por defecto: True).")
+    parser.add_argument("--output_dir", type=Path, default=Path("./batch_preprocessed_output"), help="Output directory.")
+    parser.add_argument("--n_jobs", type=int, default=4, help="Number of parallel worker processes (default: 4).")
+    parser.add_argument("--save_nifti", action="store_true", help="Save intermediate 3D MNI152 aligned NIfTI volumes alongside .pt tensors.")
     
     args = parser.parse_args()
     config = load_config()
@@ -195,57 +182,48 @@ def main():
     
     args.output_dir.mkdir(parents=True, exist_ok=True)
     
-    # 1. Descubrimiento de cohorte
-    if args.input_csv:
-        df = pd.read_csv(args.input_csv)
-        cohort = df.to_dict(orient="records")
-        for i, item in enumerate(cohort):
-            if "subject_id" not in item or pd.isna(item["subject_id"]):
-                item["subject_id"] = f"SUBJECT_{i+1:04d}"
+    if args.manifest:
+        df = pd.read_csv(args.manifest)
+        items = df.to_dict(orient="records")
+        print(f"\n[+] Loaded {len(items)} subjects from manifest: {args.manifest}")
     else:
-        print(f"\n[+] Descubriendo escaneos en: {args.input_dir}...")
-        cohort = discover_cohort(args.input_dir)
+        items = scan_directory_for_inputs(args.data_dir)
+        print(f"\n[+] Discovered {len(items)} candidate scans in directory: {args.data_dir}")
         
-    print(f"  * Total de escaneos descubiertos: {len(cohort)}")
-    if not cohort:
-        print("[!] No se encontraron escaneos para procesar.")
+    if not items:
+        print("[!] No subjects found to process. Exiting.")
         return
-
-    # 2. Procesamiento concurrente
-    print(f"\n[+] Iniciando preprocesamiento en lote (n_jobs={args.n_jobs})...")
-    results = []
+        
+    print(f"[+] Starting batch preprocessing on {len(items)} subjects with {args.n_jobs} parallel workers...")
     
-    if args.n_jobs > 1 and len(cohort) > 1:
-        with ProcessPoolExecutor(max_workers=args.n_jobs) as executor:
-            future_to_item = {
-                executor.submit(process_single_subject, item, args.output_dir, mask_path, args.save_nifti): item
-                for item in cohort
-            }
-            with tqdm(total=len(cohort), desc="Preprocesando cohorte") as pbar:
-                for future in as_completed(future_to_item):
-                    res = future.result()
-                    results.append(res)
-                    pbar.update(1)
-    else:
-        for item in tqdm(cohort, desc="Preprocesando cohorte"):
-            res = process_single_subject(item, args.output_dir, mask_path, args.save_nifti)
+    results = []
+    with ProcessPoolExecutor(max_workers=args.n_jobs) as executor:
+        futures = {
+            executor.submit(process_single_item, item, args.output_dir, mask_path, args.save_nifti): item
+            for item in items
+        }
+        
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Preprocessing"):
+            res = future.result()
             results.append(res)
             
-    # 3. Exportar manifiesto CSV
-    manifest_df = pd.DataFrame(results)
-    manifest_path = args.output_dir / "preprocessed_manifest.csv"
-    manifest_df.to_csv(manifest_path, index=False)
+    summary_df = pd.DataFrame(results)
+    manifest_csv = args.output_dir / "preprocessed_manifest.csv"
+    summary_df.to_csv(manifest_csv, index=False)
     
-    success_count = sum(1 for r in results if r["status"] in ["SUCCESS", "ALREADY_PROCESSED"])
-    print("\n" + "="*50)
-    print(" RESUMEN DE PREPROCESAMIENTO EN LOTE")
-    print("="*50)
-    print(f"  * Exitosos / Ya procesados: {success_count} / {len(cohort)}")
-    print(f"  * Fallidos:                 {len(cohort) - success_count}")
-    print(f"  * Manifiesto generado en:   {manifest_path}")
-    print("="*50)
-    print(f"\n[💡] Para ejecutar inferencia ultrarrápida sobre esta cohorte preprocesada, ejecute:")
-    print(f"     python batch_inference.py --input_csv {manifest_path} --output_csv ./batch_predictions.csv --skip-prep\n")
+    n_succ = (summary_df["status"] == "SUCCESS").sum()
+    n_alr = (summary_df["status"] == "ALREADY_PROCESSED").sum()
+    n_err = (summary_df["status"] == "ERROR").sum()
+    
+    print("\n" + "="*80)
+    print(" BATCH PREPROCESSING COMPLETED")
+    print("="*80)
+    print(f"  * Total Subjects:      {len(summary_df)}")
+    print(f"  * Successfully Processed: {n_succ}")
+    print(f"  * Previously Processed:   {n_alr}")
+    print(f"  * Failed / Errors:        {n_err}")
+    print(f"  * Manifest Generated:     {manifest_csv}")
+    print("="*80)
 
 if __name__ == "__main__":
     main()

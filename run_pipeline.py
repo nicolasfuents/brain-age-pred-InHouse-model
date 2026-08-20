@@ -35,17 +35,16 @@ from src.preprocessing.slice_extractor import process_nifti_to_tensors, extract_
 from src.inference.predictor import TriplanarPredictor
 from src.inference.bias_correction import AgeBiasCalibrator
 from src.xai.xai_engine import XAIEngine
-from src.xai.visualizer import plot_xai_overlays_panel
 
 def load_config(config_path: Path = REPO_ROOT / "config.yaml") -> Dict[str, Any]:
-    """Carga los hiperparámetros y configuraciones del archivo config.yaml."""
+    """Loads hyperparameters and configurations from config.yaml."""
     if not config_path.exists():
-        raise FileNotFoundError(f"No se encontró el archivo de configuración en {config_path}")
+        raise FileNotFoundError(f"Configuration file not found at {config_path}")
     with open(config_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 def load_precomputed_tensors(target_path: Path) -> Dict[str, torch.Tensor]:
-    """Carga tensores .pt preexistentes desde un directorio o tensor combinado."""
+    """Loads existing .pt tensors from a directory or combined dictionary."""
     if target_path.is_file() and target_path.suffix == ".pt":
         loaded = torch.load(target_path, map_location="cpu", weights_only=False)
         if isinstance(loaded, dict) and "axial" in loaded:
@@ -64,10 +63,10 @@ def load_precomputed_tensors(target_path: Path) -> Dict[str, torch.Tensor]:
                 "sagittal": torch.load(sag_p, map_location="cpu", weights_only=False)
             }
             
-    raise FileNotFoundError(f"No se pudieron cargar tensores .pt válidos desde {target_path}")
+    raise FileNotFoundError(f"Could not load valid .pt tensors from {target_path}")
 
 def run_brainprep_quasiraw(input_nii: Path, prep_dir: Path) -> Path:
-    """Ejecuta el pipeline original de entrenamiento brainprep.sh (SynthStrip + brainprep quasiraw)."""
+    """Executes the training cohort preprocessing script (SynthStrip + brainprep quasiraw)."""
     script_path = REPO_ROOT / "src" / "preprocessing" / "register_and_n4.sh"
     prep_dir.mkdir(parents=True, exist_ok=True)
     
@@ -92,25 +91,25 @@ def run_brainprep_quasiraw(input_nii: Path, prep_dir: Path) -> Path:
         env["PATH"] = f"{env['FSLDIR']}/bin:" + env["PATH"]
         env["FSLOUTPUTTYPE"] = "NIFTI_GZ"
         
-    # 4. Dummy dpkg para brainprep (compatibilidad RHEL/CentOS/Gentoo/macOS)
+    # 4. Dummy dpkg for brainprep (compatibility across Linux/RHEL/CentOS/macOS)
     dummy_dpkg = prep_dir / "dpkg"
     with open(dummy_dpkg, "w") as f:
         f.write("#!/bin/sh\necho ''\n")
     dummy_dpkg.chmod(0o755)
     env["PATH"] = f"{prep_dir}:" + env["PATH"]
     
-    # 5. Ghost dir para parche ANTs N4 en brainprep
+    # 5. Ghost dir workaround for ANTs N4 inside brainprep
     ghost_dir = os.path.join(os.getcwd(), " " + str(prep_dir / "quasiraw"))
     os.makedirs(ghost_dir, exist_ok=True)
     
-    # 6. Ejecutar script original
+    # 6. Execute preprocessing bash script
     cmd = ["bash", str(script_path), str(input_nii), str(prep_dir)]
     subprocess.run(cmd, env=env, check=True)
     
-    # 7. Buscar salida desc-6apply
+    # 7. Locate desc-6apply output
     candidates = list((prep_dir / "quasiraw").glob("*desc-6apply*.nii.gz"))
     if not candidates:
-        raise FileNotFoundError(f"El pipeline de brainprep no generó el archivo desc-6apply en {prep_dir / 'quasiraw'}")
+        raise FileNotFoundError(f"BrainPrep pipeline did not produce desc-6apply file in {prep_dir / 'quasiraw'}")
     return candidates[0]
 
 def run_single_subject(
@@ -122,7 +121,7 @@ def run_single_subject(
     config: Dict[str, Any],
     skip_prep: bool = False
 ) -> Dict[str, Any]:
-    """Ejecuta el pipeline end-to-end para un único paciente/escaneo."""
+    """Runs the end-to-end brain age estimation pipeline for a single subject."""
     output_dir.mkdir(parents=True, exist_ok=True)
     temp_dir = output_dir / "temp_processing"
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -131,7 +130,7 @@ def run_single_subject(
     chronological_age = manual_age
     tensors = None
     
-    # 1. Modo --skip-prep
+    # 1. Skip-prep mode
     if skip_prep:
         tensors_dir = output_dir / "tensors"
         if input_t1 and (input_t1.suffix == ".pt" or (input_t1.is_dir() and (input_t1 / "tensor_axial.pt").exists())):
@@ -159,7 +158,7 @@ def run_single_subject(
             )
 
     if tensors is None:
-        # 2. Ingesta y conversión inicial (DICOM vs NIfTI)
+        # 2. Input ingestion (DICOM vs NIfTI)
         if input_dicom:
             print(f"\n[+] Ingesting DICOM study from: {input_dicom}")
             dicom_dir = handle_input_path(input_dicom, temp_dir)
@@ -179,7 +178,7 @@ def run_single_subject(
         else:
             raise ValueError("Must provide either --input_dicom or --input_t1.")
 
-        # 3. Comprobación de dimensiones espaciales (Nativo vs MNI152)
+        # 3. Spatial dimensions verification (Native vs MNI152)
         nii = nib.load(str(nifti_path))
         if nii.shape != (182, 218, 182):
             print(f"\n[+] Input volume is in native space {nii.shape}. Running automated quasiraw preprocessing (brainprep.sh)...")
@@ -201,7 +200,7 @@ def run_single_subject(
         else:
             print(f"  * Volume is already in MNI152 space (182, 218, 182).")
 
-        # 4. Extracción de pilas 2.5D y normalización P1-P99
+        # 4. 2.5D slice extraction and P1-P99 normalization
         mask_path = REPO_ROOT / config["atlases"]["mask"]
         print(f"\n[+] Extracting 2.5D slices and normalizing intensities (P1-P99)...")
         tensors = process_nifti_to_tensors(
@@ -211,13 +210,13 @@ def run_single_subject(
         )
         print(f"  * Slices extracted successfully for Axial, Coronal, and Sagittal planes.")
 
-    # 5. Inferencia Triplanar y Ensamble Ridge (TTA siempre activo)
+    # 5. Triplanar Inference & Ridge Stacker (TTA active)
     checkpoints_dir = REPO_ROOT / config["models"]["checkpoints_dir"]
     print(f"\n[+] Running triplanar inference with Test-Time Augmentation (TTA)...")
     predictor = TriplanarPredictor(checkpoints_dir=checkpoints_dir, use_tta=True)
     predictions = predictor.predict(tensors)
     
-    # 6. Calibración del Sesgo de Edad (bc-BAG)
+    # 6. Age Bias Calibration (bc-BAG)
     calibrator = AgeBiasCalibrator(
         alpha=config["calibration"]["alpha"],
         beta=config["calibration"]["beta"]
@@ -228,44 +227,50 @@ def run_single_subject(
         chronological_age=chronological_age
     )
     
-    # Consolidación de Resultados
+    # Consolidate results
     final_results = {
         "subject_id": patient_id,
         "chronological_age": chronological_age,
+        "predicted_age": round(pred_ens_val, 2),
+        "pred_ensemble": round(pred_ens_val, 2),
         "pred_axial": round(float(predictions.get("pred_axial", predictions.get("Pred_Axial"))), 2),
         "pred_coronal": round(float(predictions.get("pred_coronal", predictions.get("Pred_Coronal"))), 2),
         "pred_sagittal": round(float(predictions.get("pred_sagittal", predictions.get("Pred_Sagittal"))), 2),
-        "pred_ensemble": round(pred_ens_val, 2),
         "raw_bag": round(bag_results["raw_bag"], 2) if bag_results["raw_bag"] is not None else None,
         "bc_bag": round(bag_results["bc_bag"], 2) if bag_results["bc_bag"] is not None else None
     }
     
-    print("\n" + "="*50)
-    print(f" RESULTADOS FINALES DE EDAD CEREBRAL ({patient_id})")
-    print("="*50)
+    print("\n" + "="*80)
+    print(f" BRAIN AGE PREDICTION & ESTIMATION REPORT: {patient_id}")
+    print("="*80)
     if chronological_age is not None:
-        print(f"  * Edad Cronológica:       {chronological_age:.2f} años")
-    print(f"  * Predicción Axial:       {final_results['pred_axial']:.2f} años")
-    print(f"  * Predicción Coronal:     {final_results['pred_coronal']:.2f} años")
-    print(f"  * Predicción Sagital:     {final_results['pred_sagittal']:.2f} años")
-    print(f"  * Predicción Ensamble:    {final_results['pred_ensemble']:.2f} años")
+        print(f"  * Chronological Age:          {chronological_age:.2f} years")
+    print(f"  * Predicted Brain Age:        {final_results['predicted_age']:.2f} years")
     if chronological_age is not None:
-        print(f"  * Raw BAG (Crudo):        {final_results['raw_bag']:+.2f} años")
-        print(f"  * Calibrated bc-BAG:      {final_results['bc_bag']:+.2f} años")
-    print("="*50)
+        print(f"  * Raw Brain Age Gap (BAG):    {final_results['raw_bag']:+.2f} years")
+        print(f"  * Calibrated Gap (bc-BAG):    {final_results['bc_bag']:+.2f} years (normative baseline)")
+    print("-"*80)
+    print(" Interpretation & Metric Definitions:")
+    print("  - Predicted Brain Age: Model-estimated biological age from triplanar MRI ensemble.")
+    if chronological_age is not None:
+        print("  - Raw BAG (Predicted - Chronological): Positive values suggest apparent accelerated")
+        print("    brain aging; negative values suggest apparent preservation or younger brain appearance.")
+        print("  - Calibrated bc-BAG: Bias-corrected gap adjusting for statistical regression-to-the-mean")
+        print("    across the lifespan using the normative healthy control baseline.")
+    print("="*80)
 
-    # Guardar métricas en JSON y CSV
+    # Save quantitative metrics to JSON and CSV
     json_path = output_dir / "results.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(final_results, f, indent=4)
         
     csv_path = output_dir / "results.csv"
     pd.DataFrame([final_results]).to_csv(csv_path, index=False)
-    print(f"\n[✓] Métricas cuantitativas guardadas en: {json_path} y {csv_path}")
+    print(f"\n[✓] Quantitative metrics saved to: {json_path} and {csv_path}")
 
-    # 7. Explicabilidad Médica XAI (Opcional con --all)
+    # 7. Explainable AI (XAI) Suite (Optional with --all)
     if run_all_xai:
-        print(f"\n[+] Generando suite completa de explicabilidad médica XAI (--all)...")
+        print(f"\n[+] Generating Explainable AI (XAI) feature attribution suite (--all)...")
         xai_dir = output_dir / "xai"
         xai_engine = XAIEngine(predictor=predictor)
         xai_engine.generate_explanations(
@@ -274,9 +279,9 @@ def run_single_subject(
             output_dir=xai_dir,
             patient_id=patient_id
         )
-        print(f"[✓] Suite de explicabilidad XAI generada exitosamente en: {xai_dir}")
+        print(f"[✓] XAI feature attribution suite generated successfully in: {xai_dir}")
 
-    # Limpieza de temporales
+    # Temporary cleanup
     if temp_dir.exists():
         shutil.rmtree(temp_dir)
         
@@ -284,23 +289,23 @@ def run_single_subject(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Pipeline End-to-End de Estimación de Edad Cerebral (BAG) y Explicabilidad XAI."
+        description="End-to-End Brain Age Gap (BAG) Estimation and Explainable AI (XAI) Pipeline."
     )
     input_group = parser.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--input_dicom", type=Path, help="Ruta al directorio o archivo .zip que contiene la serie DICOM.")
-    input_group.add_argument("--input_t1", type=Path, help="Ruta al volumen NIfTI T1 (.nii/.nii.gz) o tensor preprocesado (.pt).")
-    input_group.add_argument("--input_csv", type=Path, help="Ruta a un archivo CSV para inferencia por lotes (Batch Mode).")
+    input_group.add_argument("--input_dicom", type=Path, help="Path to DICOM directory or .zip archive.")
+    input_group.add_argument("--input_t1", type=Path, help="Path to T1w NIfTI volume (.nii/.nii.gz) or preprocessed tensor (.pt).")
+    input_group.add_argument("--input_csv", type=Path, help="Path to manifest CSV for batch processing.")
     
-    parser.add_argument("--age", type=float, default=None, help="Edad cronológica en años (opcional para NIfTI, auto en DICOM).")
-    parser.add_argument("--output_dir", type=Path, default=Path("./output"), help="Directorio donde se guardarán los resultados (por defecto: ./output).")
-    parser.add_argument("--all", action="store_true", help="Genera el pipeline completo incluyendo los 3 métodos de interpretabilidad XAI (IG, Occlusion, Grad-Attention) y el panel PNG.")
-    parser.add_argument("--skip_prep", "--skip-prep", dest="skip_prep", action="store_true", help="Omite el preprocesamiento previo y ejecuta inferencia directa sobre datos/tensores ya normalizados en MNI152.")
+    parser.add_argument("--age", type=float, default=None, help="Chronological age in years (optional for NIfTI, auto-extracted for DICOM).")
+    parser.add_argument("--output_dir", type=Path, default=Path("./output"), help="Output directory (default: ./output).")
+    parser.add_argument("--all", action="store_true", help="Generate full XAI attribution suite (IG, Occlusion, Grad-Attention, multi-method panel).")
+    parser.add_argument("--skip_prep", "--skip-prep", dest="skip_prep", action="store_true", help="Skip registration and run direct inference on pre-aligned MNI152 volumes or tensors.")
     
     args = parser.parse_args()
     config = load_config()
     
     if args.input_csv:
-        print(f"\n[+] Iniciando inferencia en lote desde CSV: {args.input_csv}")
+        print(f"\n[+] Starting batch inference from manifest: {args.input_csv}")
         df = pd.read_csv(args.input_csv)
         all_results = []
         for idx, row in df.iterrows():
@@ -322,7 +327,7 @@ def main():
             
         summary_csv = args.output_dir / "batch_summary.csv"
         pd.DataFrame(all_results).to_csv(summary_csv, index=False)
-        print(f"\n[✓] Inferencia en lote finalizada. Resumen guardado en: {summary_csv}")
+        print(f"\n[✓] Batch inference completed. Summary saved to: {summary_csv}")
     else:
         run_single_subject(
             input_dicom=args.input_dicom,
