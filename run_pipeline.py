@@ -182,7 +182,7 @@ def run_single_subject(
             tensors = process_nifti_to_tensors(
                 nii_path=input_t1,
                 mask_path=mask_path,
-                output_dir=output_dir / "tensors"
+                output_dir=output_dir
             )
 
     if tensors is None:
