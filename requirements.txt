@@ -12,3 +12,4 @@ scikit-image>=0.20.0
 joblib>=1.2.0
 pyyaml>=6.0
 tqdm>=4.65.0
+brainprep>=0.0.2
