@@ -265,6 +265,25 @@ def run_single_subject(
         bc_bag_val = round(raw_bag_val - (resolved_alpha * chronological_age + resolved_beta), 2)
 
     # Consolidate results
+    # Dynamic Brain Age Profile Stratification
+    profile_label = None
+    morph_desc = None
+    eval_bag = bc_bag_val if bc_bag_val is not None else raw_bag_val
+    if eval_bag is not None:
+        if eval_bag >= 8.0:
+            profile_label = "ADVANCED ATROPHY (Marked structural senescence | BAG >= +2 SD)"
+            morph_desc = "Macrostructural morphology displays marked divergence from age-matched normative baseline."
+        elif eval_bag >= 4.0:
+            profile_label = "ACCELERATED (Advanced morphological aging | +1 SD <= BAG < +2 SD)"
+            morph_desc = "Morphological features (cortical thinning/ventricular enlargement) suggest accelerated brain senescence."
+        elif eval_bag >= -4.0:
+            profile_label = "NORMATIVE (Age-congruent brain structure | Within +/- 1 SD)"
+            morph_desc = "Parenchymal integrity and ventricular morphology are congruent with chronological expectations."
+        else:
+            profile_label = "PRESERVED (Youthful structural reserve | BAG < -1 SD)"
+            morph_desc = "Brain parenchyma and ventricular morphology exhibit structural characteristics younger than chronological age."
+
+    # Consolidate results
     final_results = {
         "subject_id": patient_id,
         "chronological_age": chronological_age,
@@ -274,11 +293,12 @@ def run_single_subject(
         "pred_coronal": round(float(predictions.get("pred_coronal", predictions.get("Pred_Coronal"))), 2),
         "pred_sagittal": round(float(predictions.get("pred_sagittal", predictions.get("Pred_Sagittal"))), 2),
         "raw_bag": raw_bag_val,
-        "bc_bag": bc_bag_val
+        "bc_bag": bc_bag_val,
+        "brain_age_profile": profile_label
     }
-    
+
     print("\n" + "="*80)
-    print(f" BRAIN AGE PREDICTION & ESTIMATION REPORT: {patient_id}")
+    print(f" BRAIN AGE PREDICTION & STRUCTURAL INTEGRITY REPORT: {patient_id}")
     print("="*80)
     if chronological_age is not None:
         print(f"  * Chronological Age:          {chronological_age:.2f} years")
@@ -287,22 +307,19 @@ def run_single_subject(
         print(f"  * Brain Age Gap (Raw BAG):    {final_results['raw_bag']:+.2f} years")
         if bc_bag_val is not None:
             print(f"  * Calibrated Gap (bc-BAG):    {final_results['bc_bag']:+.2f} years (local calibration applied)")
-    print("-"*80)
-    print(" Interpretation & Guidelines:")
-    print("  - Predicted Brain Age: Model-estimated biological brain age from triplanar MRI.")
-    if chronological_age is not None:
-        print("  - Raw BAG (Predicted - Chronological): Difference between estimated brain age")
-        print("    and chronological age. Positive values indicate an older-appearing brain;")
-        print("    negative values indicate a younger-appearing brain.")
+    if profile_label is not None:
+        print("-" * 80)
+        print(" Neurostructural Stratification:")
+        print(f"  [●] Brain Age Profile:       {profile_label}")
+        print(f"  - Morphometric Assessment:   {morph_desc}")
         if bc_bag_val is None:
-            print("  - Scanner Calibration Note: This Raw BAG is uncalibrated for your specific scanner.")
-            print("    To adjust for scanner-specific bias and regression-to-the-mean, calibrate using")
-            print("    a local Healthy Control cohort (calibrate_local_scanner.py).")
+            print("  - Methodological Guideline:  Raw BAG is uncalibrated. Local scanner calibration")
+            print("                               (calibrate_local_scanner.py) is recommended to adjust")
+            print("                               for site-specific contrast and regression-to-the-mean.")
         else:
-            print(f"  - Calibrated bc-BAG: Bias-corrected gap using local parameters (alpha={resolved_alpha:.4f}, beta={resolved_beta:.4f}).")
+            print(f"  - Methodological Guideline:  Calibrated bc-BAG applied (alpha={resolved_alpha:.4f}, beta={resolved_beta:.4f}).")
     print("="*80)
 
-    # Save quantitative metrics to JSON and CSV
     json_path = output_dir / "results.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(final_results, f, indent=4)
