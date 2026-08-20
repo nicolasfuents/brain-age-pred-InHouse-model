@@ -176,8 +176,8 @@ Evaluated across independent external cohorts and MRI field strengths without re
 
 | External Cohort | Scanner / Field Strength | Sample Size | MAE (Years) |
 | :--- | :--- | :--- | :--- |
-| **RRIB** | Siemens Tim Trio / 3.0T | $N = 65$ | **3.89 ± 0.27 yr** |
-| **ADNI** | Multicenter / 1.5T & 3.0T | $N = 143$ | **3.97 ± 0.43 yr** |
+| **RRIB** | Siemens Tim Trio / 3.0T | $N = 158$ | **3.89 ± 0.27 yr** |
+| **ADNI** | Multicenter / 1.5T & 3.0T | $N = 79$ | **4.07 ± 0.44 yr** |
 | **OASIS-3** | Siemens / 3.0T | $N = 813$ | **4.15 ± 0.13 yr** |
 
 ---

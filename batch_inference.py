@@ -157,6 +157,7 @@ def main():
     predictor = TriplanarPredictor(checkpoints_dir=checkpoints_dir, use_tta=True)
     xai_engine = XAIEngine(predictor=predictor) if args.all else None
     mask_path = REPO_ROOT / config["atlases"]["mask"]
+    template_path = REPO_ROOT / config["atlases"]["template"]
 
     records = []
     if args.input_csv:
@@ -216,7 +217,8 @@ def main():
                 tensors = process_nifti_to_tensors(
                     nii_path=nifti_path,
                     mask_path=mask_path,
-                    output_dir=subj_out / "tensors"
+                    template_path=template_path,
+                    output_dir=subj_out
                 )
                 
             predictions = predictor.predict(tensors)

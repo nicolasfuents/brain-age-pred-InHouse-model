@@ -98,14 +98,15 @@ def run_brainprep_quasiraw(input_nii: Path, prep_dir: Path) -> Path:
     dummy_dpkg.chmod(0o755)
     env["PATH"] = f"{prep_dir}:" + env["PATH"]
     
-    # 5. Ghost dir workaround for ANTs N4 inside brainprep
-    ghost_dir = os.path.join(os.getcwd(), " " + str(prep_dir / "quasiraw"))
-    os.makedirs(ghost_dir, exist_ok=True)
-    
-    # 6. Execute preprocessing bash script
-    cmd = ["bash", str(script_path), str(input_nii), str(prep_dir)]
+    # 5. Execute preprocessing bash script with absolute paths
+    cmd = ["bash", str(script_path.resolve()), str(input_nii.resolve()), str(prep_dir.resolve())]
     subprocess.run(cmd, env=env, check=True)
     
+    # 6. Clean up any ANTs ghost directories with leading spaces
+    for p in Path(os.getcwd()).glob(" *"):
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
+            
     # 7. Locate desc-6apply output
     candidates = list((prep_dir / "quasiraw").glob("*desc-6apply*.nii.gz"))
     if not candidates:
@@ -229,10 +230,12 @@ def run_single_subject(
 
         # 4. 2.5D slice extraction, NIfTI slices, QC report and P1-P99 normalization
         mask_path = REPO_ROOT / config["atlases"]["mask"]
+        template_path = REPO_ROOT / config["atlases"]["template"]
         print(f"\n[+] Extracting 2.5D slices and generating Preprocessing QC report...")
         tensors = process_nifti_to_tensors(
             nii_path=nifti_path,
             mask_path=mask_path,
+            template_path=template_path,
             output_dir=output_dir,
             patient_id=patient_id,
             save_qc=True
@@ -295,10 +298,6 @@ def run_single_subject(
             print("  - Scanner Calibration Note: This Raw BAG is uncalibrated for your specific scanner.")
             print("    To adjust for scanner-specific bias and regression-to-the-mean, calibrate using")
             print("    a local Healthy Control cohort (calibrate_local_scanner.py).")
-            print("    * Recommended sample size: N >= 30 (ideally N >= 50) healthy controls")
-            print("      spanning the age range of interest.")
-            print("    * Re-calibration is recommended periodically when adding new control batches")
-            print("      (e.g., every 50-100 new scans or following major scanner software/hardware updates).")
         else:
             print(f"  - Calibrated bc-BAG: Bias-corrected gap using local parameters (alpha={resolved_alpha:.4f}, beta={resolved_beta:.4f}).")
     print("="*80)
@@ -323,9 +322,12 @@ def run_single_subject(
             patient_id=patient_id
         )
 
-    # Temporary cleanup
+    # Temporary cleanup (temp directory & any ghost directories)
     if temp_dir.exists():
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    for p in Path(os.getcwd()).glob(" *"):
+        if p.is_dir():
+            shutil.rmtree(p, ignore_errors=True)
         
     return final_results
 
