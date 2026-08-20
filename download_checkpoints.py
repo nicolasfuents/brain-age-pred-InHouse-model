@@ -4,7 +4,7 @@
 download_checkpoints.py
 
 Script para la descarga automática de los checkpoints del ensamble triplanar
-desde los Releases de GitHub / almacenamiento remoto institucional.
+desde los Releases de GitHub.
 """
 
 import os
@@ -18,7 +18,7 @@ CHECKPOINTS_DIR = REPO_ROOT / "checkpoints"
 
 # URLs de descarga pública (GitHub Releases Assets)
 RELEASE_TAG = "v1.0.0"
-GITHUB_REPO = "nicolasfuents/brain-age-pred-InHouse-model" # Será actualizado con el repo del usuario
+GITHUB_REPO = "nicolasfuents/brain-age-pred-InHouse-model"
 BASE_URL = f"https://github.com/{GITHUB_REPO}/releases/download/{RELEASE_TAG}"
 
 MODELS = {
@@ -33,10 +33,6 @@ MODELS = {
     "model_sagittal_resnet18_mse.pt": {
         "url": f"{BASE_URL}/model_sagittal_resnet18_mse.pt",
         "size_mb": 128
-    },
-    "ridge_triplanar_ensemble.joblib": {
-        "url": f"{BASE_URL}/ridge_triplanar_ensemble.joblib",
-        "size_mb": 0.002
     }
 }
 
