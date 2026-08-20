@@ -25,8 +25,7 @@ The system employs a multi-planar deep learning architecture combining convoluti
   - [4. High-Throughput Batch Preprocessing](#4-high-throughput-batch-preprocessing-batch_preprocesspy)
   - [5. Local Scanner Calibration](#5-local-scanner-calibration-calibrate_local_scannerpy)
 - [Model Interpretability Methods (XAI)](#model-interpretability-methods-xai)
-- [Pipeline Outputs](#pipeline-outputs)
-- [Performance & Benchmark](#performance--benchmark)
+- [Train/Val & Test](#trainval--test)
 - [Disclaimer](#disclaimer)
 
 ---
@@ -53,10 +52,9 @@ To ensure maximum anatomical fidelity and reproducibility, raw MRI scans (DICOM 
 * **ANTs** (tested with `v2.6.2`, compatible with `v2.4+`): `N4BiasFieldCorrection` for B-spline non-parametric bias field correction.
 * **FreeSurfer / SynthStrip** (tested with `v7.4.1`, compatible with `v7.0+`): `mri_synthstrip` for deep-learning intracranial skull stripping and brain mask generation.
 * **dcm2niix** (tested with `v1.0.20230411`): High-performance DICOM-to-NIfTI conversion.
-* **BrainPrep** (`v0.0.2`, CEA NeuroSpin): Quasiraw affine workflow automation (installed via `environment.yml`).
 
 *Fast Inference Optimization (`--skip_prep`):*
-If your volumes are already preprocessed in MNI152 space (182x218x182, 1mm), you can pass `--skip_prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
+If your volumes are already preprocessed (with our preprocessing pipeline), you can pass `--skip_prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
 
 ---
 
@@ -70,7 +68,7 @@ python run_pipeline.py --input_dicom /path/to/DICOM_study/
 # Inference from raw T1w NIfTI volume (runs automated SynthStrip + FLIRT + N4):
 python run_pipeline.py --input_t1 /path/to/T1w_volume.nii.gz --age 68.5
 
-# Direct inference on preprocessed MNI volume (skips registration and N4):
+# Direct inference on preprocessed volume (with our preprocessing pipeline):
 python run_pipeline.py --input_t1 /path/to/preprocessed_MNI_volume.nii.gz --age 68.5 --skip_prep
 ```
 
@@ -87,23 +85,20 @@ python batch_inference.py \
     --input_dir /path/to/cohort_scans_directory/ \
     --output_csv ./batch_predictions.csv \
     --output_dir ./batch_results
-
-# Fast batch inference on pre-registered MNI datasets:
-python batch_inference.py \
-    --input_csv ./cohort_manifest.csv \
-    --output_csv ./batch_predictions.csv \
-    --skip_prep
 ```
 
 ### 4. High-Throughput Batch Preprocessing (`batch_preprocess.py`)
+
+Used to preprocess large cohorts in parallel prior to inference (runs deep-learning skull-stripping with SynthStrip, affine registration to MNI152 1mm, and N4 bias field correction):
+
 ```bash
-# Parallel batch preprocessing on raw scans folder:
+# Parallel batch preprocessing on raw scans folder (scans auto-discovered in data_dir):
 python batch_preprocess.py \
     --data_dir /path/to/raw_scans_directory/ \
     --output_dir ./preprocessed_cohort \
     --n_jobs 8
 
-# Batch preprocessing from a CSV file:
+# Batch preprocessing from a CSV file (useful when raw scans are distributed across multiple paths or disks):
 python batch_preprocess.py \
     --manifest /path/to/cohort_manifest.csv \
     --output_dir ./preprocessed_cohort \
@@ -135,40 +130,13 @@ When specifying the `--all` flag, the pipeline automatically generates 3 complem
 
 ---
 
-## Pipeline Outputs
+## Train/Val & Test
 
-All subject results and intermediate artifacts are organized in a clean directory structure:
-
-```text
-output_directory/
-├── results.json                        # Quantitative metrics (Predicted Age, Raw BAG, bc-BAG)
-├── results.csv                         # Consolidated tabular record for cohort analysis
-├── prep/                               # Preprocessed NIfTI volumes and QC report
-│   ├── <ID>_preprocessed_MNI152.nii.gz # 3D volume aligned to MNI152 (1mm isovoxel)
-│   ├── <ID>_slices_axial_5c.nii.gz     # 5 central axial slices NIfTI (Z = 89..93)
-│   ├── <ID>_slices_coronal_5c.nii.gz   # 5 central coronal slices NIfTI (Y = 107..111)
-│   ├── <ID>_slices_sagittal_5c.nii.gz  # 5 central sagittal slices NIfTI (X = 89..93)
-│   ├── preprocessing_qc_report.png     # Visual QC panel (3x5 grid with brain mask boundary)
-│   └── preprocessing_qc_metrics.json   # Contrast normalization (P1, P99) and voxel statistics
-├── tensors/                            # Normalized PyTorch .pt tensors
-│   ├── tensor_axial.pt                 # Axial tensor (5, 182, 218)
-│   ├── tensor_coronal.pt               # Coronal tensor (5, 182, 182)
-│   └── tensor_sagittal.pt              # Sagittal tensor (5, 218, 182)
-└── xai/                                # Explainable AI suite (with --all)
-    ├── xai_overlays_panel.png          # High-resolution (300 DPI) multi-method visual panel
-    ├── roi_importance_ig.png & .csv    # Subcortical & cerebellar ROI rankings (Integrated Gradients)
-    └── roi_importance_occ.png & .csv   # Subcortical & cerebellar ROI rankings (Occlusion Sensitivity)
-```
-
----
-
-## Performance & Benchmark
-
-The architecture was developed and benchmarked on a multicenter dataset comprising **N = 7,453 subjects** in the derivation cohort (OpenBHB, ADNI3, Cam-CAN, AOMIC, OpenNeuro, JUK) and evaluated on independent external cohorts:
+The architecture was trained on **N = 5,913 subjects** and internally evaluated on **N = 1,540 subjects** (total derivation cohort: **N = 7,453 subjects** across OpenBHB, ADNI3, Cam-CAN, AOMIC, OpenNeuro, and JUK):
 
 ### 1. Internal Validation Benchmark ($N = 1,540$)
 
-* **Internal Validation Performance:** **MAE = 2.57 years** across the held-out stratified validation cohort.
+* **Internal Validation Performance:** **MAE = 2.57 years** across the held-out stratified validation cohort ($N = 1,540$).
 
 ### 2. External Multi-Site Validation (Out-of-Distribution / OOD)
 
