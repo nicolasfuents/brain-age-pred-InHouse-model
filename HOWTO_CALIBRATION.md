@@ -1,56 +1,56 @@
-# Guía de Uso: Calibración Local del Sesgo de Edad para Resonadores Externos
+# User Guide: Local Age Bias Calibration for External MRI Scanners
 
-Esta guía detalla el procedimiento estándar para calibrar el modelo de **Edad Cerebral (Brain Age Gap, BAG)** a resonadores locales externos utilizando una cohorte local de **Controles Cognitivamente Normales (CN)**.
+This guide outlines the standard protocol to calibrate the **Brain Age Gap (BAG)** model to local external scanners using a reference cohort of **Cognitively Normal (CN) healthy controls**.
 
-El objetivo de esta calibración es eliminar el sesgo sistemático por edad (efecto de regresión a la media) y ajustar el offset específico del escáner/secuencia, garantizando que el `bc-BAG` sea completamente ortogonal a la edad cronológica ($r = 0.000$) y previniendo falsos positivos o negativos en la práctica clínica.
+The purpose of this calibration is to eliminate the systematic regression-to-the-mean age bias and compensate for scanner/sequence-specific offsets. This ensures that the calibrated metric (`bc-BAG`) is orthogonal to chronological age ($r = 0.000$), preventing false positives and false negatives in clinical practice.
 
 ---
 
-## 📋 Flujo de Trabajo en 3 Pasos
+## 3-Step Calibration Workflow
 
 ```mermaid
 graph TD
-    A["Escaneos T1 / DICOM (Controles Sanos Locales)"] --> B["batch_inference.py"]
+    A["T1w Scans / DICOM (Local Healthy Controls)"] --> B["batch_inference.py"]
     B --> C["controls_predictions.csv (Chronological_Age & Pred_Ensemble)"]
     C --> D["calibrate_local_scanner.py"]
-    D --> E["Parámetros Locales (alpha, beta) & Curva de Calibración"]
-    F["Escaneos T1 / DICOM (Pacientes Clínicos: MCI / AD)"] --> G["batch_inference.py"]
+    D --> E["Local Parameters (alpha, beta) & Calibration Curve"]
+    F["T1w Scans / DICOM (Clinical Patients: MCI / AD)"] --> G["batch_inference.py"]
     G --> H["clinical_predictions.csv"]
     E --> I["calibrate_local_scanner.py --clinical_csv"]
     H --> I
-    I --> J["calibrated_clinical_predictions.csv (bc_BAG Ortogonal)"]
+    I --> J["calibrated_clinical_predictions.csv (Orthogonal bc_BAG)"]
 ```
 
 ---
 
-## Paso 1: Inferencia en Lote de la Cohorte Control (Raw BAG)
+## Step 1: Batch Inference on Control Cohort (Raw BAG)
 
-Ejecuta la inferencia en lote sobre la carpeta que contiene las resonancias de tus controles sanos locales (archivos NIfTI o DICOMs):
+Run batch inference on the directory containing scans of your local healthy controls (NIfTI files or DICOM series):
 
 ```bash
 python batch_inference.py \
-    --input_dir /ruta/a/resonancias_controles_sanos/ \
+    --input_dir /path/to/healthy_controls_scans/ \
     --output_csv ./controls_predictions.csv \
     --output_dir ./controls_outputs
 ```
 
-*Nota:* Si utilizas volúmenes NIfTI donde la edad no está en la cabecera, puedes pasar un CSV con las columnas `input_t1` y `age`:
+*Note:* If using NIfTI volumes where age is not present in the header, you can provide an input CSV with `input_t1` and `age` columns:
 ```bash
 python batch_inference.py \
-    --input_csv /ruta/a/metadatos_controles.csv \
+    --input_csv /path/to/controls_metadata.csv \
     --output_csv ./controls_predictions.csv
 ```
 
-El archivo `controls_predictions.csv` contendrá las columnas requeridas:
-* `Chronological_Age`: Edad real del sujeto al momento del escaneo.
-* `Pred_Ensemble`: Edad cerebral estimada por el ensamble triplanar.
-* `Raw_BAG`: Brecha cruda ($\text{Pred\_Ensemble} - \text{Chronological\_Age}$).
+The resulting `controls_predictions.csv` contains the required fields:
+* `Chronological_Age`: Subject chronological age at scan time.
+* `Pred_Ensemble`: Brain age predicted by the triplanar ensemble.
+* `Raw_BAG`: Raw gap metric ($	ext{Pred\_Ensemble} - 	ext{Chronological\_Age}$).
 
 ---
 
-## Paso 2: Ajuste de la Calibración Local
+## Step 2: Fit Local Calibration Parameters
 
-Ejecuta el script de calibración pasando el CSV de controles sanos obtenido en el Paso 1:
+Run the calibration script passing the healthy controls CSV from Step 1:
 
 ```bash
 python calibrate_local_scanner.py \
@@ -58,39 +58,39 @@ python calibrate_local_scanner.py \
     --output_dir ./calibration_results
 ```
 
-### Resultados Generados:
+### Generated Artifacts:
 1. **`local_calibration_parameters.csv`**:
-   * $\alpha$ (**alpha / Pendiente**): Tasa de regresión a la media del modelo.
-   * $\beta$ (**beta / Intercepto**): Offset sistemático específico del resonador local.
+   * $lpha$ (**alpha / Slope**): Regression-to-the-mean rate of the model.
+   * $eta$ (**beta / Intercept**): Scanner-specific systematic offset.
 2. **`local_calibration_curve.png`**:
-   * Gráfico comparativo de dispersión pre-calibración ($r \neq 0$) vs post-calibración local ($r = 0.000$, ortogonalizado).
+   * Comparative scatter plot showing pre-calibration ($r \neq 0$) versus post-calibration ($r = 0.000$, orthogonalized) distributions.
 
 ---
 
-## Paso 3: Corrección de la Cohorte Clínica Local (MCI, AD, etc.)
+## Step 3: Bias-Correct the Local Clinical Cohort (MCI, AD, etc.)
 
-Una vez obtenidos los coeficientes $\alpha$ y $\beta$ del resonador, puedes corregir directamente tu cohorte de pacientes clínicos escaneados en el mismo equipo:
+Once the scanner-specific coefficients $lpha$ and $eta$ are fitted, apply the calibration to your clinical patient cohort acquired on the same scanner:
 
 ```bash
-# 1. Inferencia de la cohorte clínica
+# 1. Run inference on clinical cohort
 python batch_inference.py \
-    --input_dir /ruta/a/resonancias_pacientes_clinicos/ \
+    --input_dir /path/to/clinical_patients_scans/ \
     --output_csv ./clinical_predictions.csv
 
-# 2. Calibración y exportación de la métrica corregida bc-BAG
+# 2. Apply calibration and compute bc-BAG
 python calibrate_local_scanner.py \
     --controls_csv ./controls_predictions.csv \
     --clinical_csv ./clinical_predictions.csv \
     --output_dir ./calibration_results
 ```
 
-El archivo resultante `calibration_results/calibrated_clinical_predictions.csv` incluirá la métrica clínica fundamental:
+The output file `calibration_results/calibrated_clinical_predictions.csv` contains the bias-corrected metric:
 $$\text{bc-BAG} = \text{Raw\_BAG} - (\alpha \cdot \text{Chronological\_Age} + \beta)$$
 
 ---
 
-## 💡 Interpretación Clínica de `bc-BAG`
+## Clinical Interpretation of `bc-BAG`
 
-* **`bc-BAG \approx 0` años:** Envejecimiento cerebral normativo concordante con la edad cronológica.
-* **`bc-BAG > +3.0` a `+5.0` años:** Envejecimiento cerebral biológicamente acelerado (asociado a atrofia neurodegenerativa, conversión temprana de MCI a AD y mayor carga patológica amiloide/tau).
-* **`bc-BAG < -3.0` años:** Envejecimiento cerebral resiliente / preservación estructural.
+* **$	ext{bc-BAG} \approx 0$ years:** Normative brain aging aligned with chronological age.
+* **$	ext{bc-BAG} > +3.0$ to $+5.0$ years:** Biologically accelerated brain aging (associated with neurodegenerative atrophy, accelerated conversion from MCI to AD, and higher amyloid/tau burden).
+* **$	ext{bc-BAG} < -3.0$ years:** Resilient brain aging / structural preservation.

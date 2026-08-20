@@ -9,95 +9,95 @@
 [![Model Release](https://img.shields.io/badge/Release-v1.0.0-purple.svg)](https://github.com/nicolasfuents/brain-age-pred-InHouse-model/releases/tag/v1.0.0)
 [![License](https://img.shields.io/badge/License-Academic-green.svg)]()
 
-Este repositorio contiene todo lo necesario para el cálculo de estimación de **Edad Cerebral (Brain Age Gap, BAG)**, calibración local de escáneres externos, y generación de **mapas de explicabilidad diagnóstica (Medical XAI)** a partir de resonancias magnéticas estructurales T1 (compatibilidad nativa con carpetas/archivos `.zip` **DICOM**, volúmenes **NIfTI** y tensores preprocesados **`.pt`**).
+This repository provides an end-to-end framework for **Brain Age Gap (BAG)** estimation, local scanner calibration, and clinical explainability via **Medical XAI** maps from structural T1-weighted MRI (supporting **DICOM** folders/archives, **NIfTI** volumes, and preprocessed PyTorch **`.pt`** tensors).
 
-El modelo implementa una arquitectura 2.5D optimizada que opera con solo 5 cortes representativos por cada plano anatómico (axial, coronal y sagital). Gracias a esto, la inferencia de las redes neuronales es sumamente rápida y liviana (aproximadamente 0.5 segundos por volumen en GPU). La mayor carga computacional del flujo de trabajo reside en la etapa de preprocesamiento (alineación a MNI152 y corrección de inhomogeneidad N4).
+The model implements an optimized 2.5D architecture operating on only 5 representative slices per anatomical plane (axial, coronal, and sagittal). As a result, neural network inference is extremely fast and lightweight (~0.55 seconds per volume on GPU). The primary computational workload resides in the preprocessing stage (affine alignment to MNI152 and N4 bias field correction).
 
 ---
 
-## Instalación y Requisitos
+## Installation & Requirements
 
-### 1. Clonar el repositorio
+### 1. Clone the repository
 ```bash
 git clone https://github.com/nicolasfuents/brain-age-pred-InHouse-model.git
 cd brain-age-pred-InHouse-model
 ```
 
-### 2. Crear y activar el entorno Conda
+### 2. Create and activate the Conda environment
 ```bash
 conda env create -f environment.yml
 conda activate brain_age_env
 ```
 
-*Nota:* Asegúrese de tener instalado `dcm2niix` en su sistema para la conversión automática de estudios DICOM.
+*Note:* Ensure `dcm2niix` is installed on your system for automatic DICOM conversion.
 
 ---
 
-## Guía de Uso
+## Usage Guide
 
-### 1. Inferencia Individual Rápida (`run_pipeline.py`)
+### 1. Single-Subject Fast Inference (`run_pipeline.py`)
 ```bash
-# Inferencia desde DICOM (extrae edad de cabecera automáticamente):
-python run_pipeline.py --input_dicom /ruta/al/estudio_DICOM/
+# Inference from DICOM (automatically extracts age from header):
+python run_pipeline.py --input_dicom /path/to/DICOM_study/
 
-# Inferencia desde volumen NIfTI T1:
-python run_pipeline.py --input_t1 /ruta/al/volumen_T1w.nii.gz --age 68.5
+# Inference from raw T1w NIfTI volume:
+python run_pipeline.py --input_t1 /path/to/T1w_volume.nii.gz --age 68.5
 
-# Inferencia directa sobre volumen/tensor ya preprocesado (sin re-ejecutar registro/N4):
-python run_pipeline.py --input_t1 /ruta/al/volumen_MNI_preprocesado.nii.gz --age 68.5 --skip-prep
+# Direct inference on preprocessed MNI volume (skips registration and N4):
+python run_pipeline.py --input_t1 /path/to/preprocessed_MNI_volume.nii.gz --age 68.5 --skip-prep
 ```
 
-### 2. Inferencia Completa con Explicabilidad XAI (`--all`)
+### 2. Full Inference with Diagnostic XAI (`--all`)
 ```bash
-# Inferencia + Generación de mapas IG, Occlusion, Grad-Attention y Panel Diagnóstico PNG:
-python run_pipeline.py --input_dicom /ruta/al/estudio_DICOM/ --all
+# Inference + Integrated Gradients, Occlusion Sensitivity, Grad-Attention & Diagnostic PNG Panel:
+python run_pipeline.py --input_dicom /path/to/DICOM_study/ --all
 ```
 
-### 3. Inferencia en Lote (`batch_inference.py`)
-Procesa un directorio completo de resonancias (NIfTIs, tensores `.pt` o carpetas/zips DICOM) y genera un CSV listo para calibración:
+### 3. Batch Inference (`batch_inference.py`)
+Processes a directory of scans (NIfTI files, `.pt` tensors, or DICOM folders/zips) and outputs a consolidated CSV ready for calibration:
 ```bash
-# Inferencia estándar en lote:
-python batch_inference.py     --input_dir /ruta/a/directorio_de_escaneos/     --output_csv ./batch_predictions.csv
+# Standard batch inference:
+python batch_inference.py     --input_dir /path/to/scans_directory/     --output_csv ./batch_predictions.csv
 
-# Inferencia en lote rápida sobre datasets ya preprocesados:
-python batch_inference.py     --input_dir /ruta/a/datasets_preprocesados/     --output_csv ./batch_predictions.csv     --skip-prep
+# Fast batch inference on preprocessed datasets:
+python batch_inference.py     --input_dir /path/to/preprocessed_datasets/     --output_csv ./batch_predictions.csv     --skip-prep
 ```
 
-### 4. Calibración Local del Resonador (`calibrate_local_scanner.py`)
-Ajusta la regresión lineal sobre una cohorte local de Controles Sanos (CN) para eliminar el sesgo de regresión a la media y corregir la cohorte clínica:
+### 4. Local Scanner Calibration (`calibrate_local_scanner.py`)
+Fits linear regression coefficients on a local Cognitively Normal (CN) healthy control cohort to eliminate regression-to-the-mean age bias and correct clinical patient cohorts:
 ```bash
 python calibrate_local_scanner.py     --controls_csv ./controls_predictions.csv     --clinical_csv ./clinical_predictions.csv     --output_dir ./calibration_results
 ```
-*(Ver detalles completos en [HOWTO_CALIBRATION.md](HOWTO_CALIBRATION.md))*
+*(See complete workflow in [HOWTO_CALIBRATION.md](HOWTO_CALIBRATION.md))*
 
 ---
 
-## Métodos de Interpretabilidad Médica (XAI) con `--all`
+## Medical Interpretability Methods (XAI) with `--all`
 
-Al especificar la bandera opcional `--all`, el pipeline genera automáticamente los 3 métodos de interpretabilidad diagnóstica:
+When specifying the `--all` flag, the pipeline automatically generates 3 complementary diagnostic interpretability maps:
 
-1. **Integrated Gradients (IG firmado):** Integración de gradientes a nivel de vóxel a lo largo de una trayectoria lineal desde una base neutra hasta la imagen real. Revela qué microestructuras específicas aceleran (+) o disminuyen (-) la edad predicha.
-2. **Occlusion Sensitivity:** Perturbación sistemática mediante parches oclusivos deslizantes, cuantificando el impacto causal directo en la predicción.
-3. **Grad-Attention (Transformer Rollout):** Matriz de auto-atención del último bloque Transformer multiplicada por los gradientes de retropropagación ($|\text{Atención} \odot \text{Gradiente}|$), aislando las redes anatómicas y circuitos a larga distancia determinantes.
-
----
-
-## Salidas del Pipeline
-
-* **`results.json` / `results.csv`:** Predicciones cuantitativas para cada plano, predicción consolidada del ensamble, edad cronológica, `Raw_BAG` y `bc_BAG` (calibrado).
-* **`tensors/`:** Tensores PyTorch 2.5D (`tensor_axial.pt`, `tensor_coronal.pt`, `tensor_sagittal.pt`) extraídos y normalizados.
-* **`xai/<PATIENT_ID>_xai_diagnostic_panel.png` (con `--all`):** Panel visual de alta resolución (300 DPI) con la anatomía T1 y los 3 mapas de explicabilidad (IG, Occlusión y Grad-Attention) por cada plano.
+1. **Integrated Gradients (Signed IG):** Voxel-wise gradient path integration from a baseline to the input image, highlighting microstructural features that accelerate (+) or decelerate (-) predicted brain age.
+2. **Occlusion Sensitivity:** Systematic sliding-patch perturbation mapping causal prediction shifts across brain anatomy.
+3. **Grad-Attention (Transformer Rollout):** Self-attention rollout gated by backpropagated gradients ($|\text{Attention} \odot \text{Gradient}|$), isolating long-range anatomical circuits driving the prediction.
 
 ---
 
-## Rendimiento y Benchmark
+## Pipeline Outputs
 
-El tiempo de procesamiento y consumo de memoria del framework se divide en dos fases:
+* **`results.json` / `results.csv`:** Quantitative metrics including per-plane predictions, ensemble prediction, chronological age, `Raw_BAG`, and `bc_BAG` (calibrated).
+* **`tensors/`:** Extracted and normalized 2.5D PyTorch tensors (`tensor_axial.pt`, `tensor_coronal.pt`, `tensor_sagittal.pt`).
+* **`xai/<PATIENT_ID>_xai_diagnostic_panel.png` (with `--all`):** High-resolution (300 DPI) visual diagnostic panel displaying T1 anatomy alongside all 3 XAI overlay maps for each orthogonal plane.
 
-| Etapa | Hardware Evaluado | Tiempo por Sujeto | Huella de Memoria |
+---
+
+## Performance & Benchmark
+
+Computation time and memory consumption are benchmarked across the pipeline stages:
+
+| Stage | Evaluated Hardware | Time per Subject | Memory Footprint |
 | :--- | :--- | :--- | :--- |
-| **Inferencia Triplanar (3 Modelos + TTA)** | GPU (NVIDIA H100 80GB) | **~0.55 s** (~1.8 sujetos/s) | **< 1.0 GB VRAM** (pico 954 MB) |
-| **Inferencia Triplanar (3 Modelos + TTA)** | CPU (AMD EPYC 9654) | **~10.8 s** | ~1.2 GB RAM |
-| **Preprocesamiento Quasiraw (FLIRT + N4)** | CPU / GPU | **~45 – 60 s** | ~2.0 GB RAM |
+| **Triplanar Inference (3 Models + TTA)** | GPU (NVIDIA H100 80GB) | **~0.55 s** (~1.8 subjects/s) | **< 1.0 GB VRAM** (954 MB peak) |
+| **Triplanar Inference (3 Models + TTA)** | CPU (AMD EPYC 9654) | **~10.8 s** | ~1.2 GB RAM |
+| **Quasiraw Preprocessing (FLIRT + N4)** | CPU / GPU | **~45 – 60 s** | ~2.0 GB RAM |
 
-*Nota:* Al requerir menos de 1 GB de VRAM durante la inferencia, el framework puede ejecutarse en GPUs comerciales de gama de entrada (e.g. GTX 1650, RTX 3050 de laptop) o en servidores que operen exclusivamente sobre CPU.
+*Note:* With an inference footprint under 1 GB VRAM, the models can run locally on standard entry-level consumer GPUs (e.g., laptop GTX 1650, RTX 3050) or CPU-only server instances.
