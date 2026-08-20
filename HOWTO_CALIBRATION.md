@@ -110,3 +110,32 @@ bc-BAG = Raw BAG - (alpha * Chronological Age + beta)
 * **`bc-BAG ~ 0.0 years`**: Normative brain appearance aligned with chronological age.
 * **`bc-BAG > +3.0 to +5.0 years`**: Biologically accelerated brain aging (associated with neurodegenerative atrophy, accelerated conversion from MCI to AD, and higher biomarker burden).
 * **`bc-BAG < -3.0 years`**: Structural brain preservation / resilience.
+
+
+---
+
+## Step 4: Incorporating Calibration into Future Pipeline Runs
+
+After running `calibrate_local_scanner.py`, you can incorporate the calibration coefficients into single-subject (`run_pipeline.py`) or batch inference (`batch_inference.py`) in 3 ways:
+
+### Option A: Automatic `config.yaml` Update (Recommended)
+Add `--update_config` when executing calibration:
+```bash
+python calibrate_local_scanner.py     --controls_csv ./controls_predictions.csv     --output_dir ./calibration_results     --update_config
+```
+This automatically populates `alpha` and `beta` inside `config.yaml`. Subsequent runs of `run_pipeline.py` or `batch_inference.py` will automatically apply the calibration.
+
+### Option B: Pass Calibration File Directly via CLI
+Pass the generated CSV without modifying `config.yaml`:
+```bash
+# Single subject inference:
+python run_pipeline.py     --input_t1 /path/to/T1w_scan.nii.gz     --age 74.2     --calibration_file ./calibration_results/local_calibration_parameters.csv
+
+# Batch inference:
+python batch_inference.py     --input_dir /path/to/scans/     --calibration_file ./calibration_results/local_calibration_parameters.csv
+```
+
+### Option C: Pass Direct CLI Coefficients
+```bash
+python run_pipeline.py     --input_t1 /path/to/T1w_scan.nii.gz     --age 74.2     --alpha -0.215000     --beta 15.302000
+```

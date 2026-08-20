@@ -55,8 +55,8 @@ To ensure maximum anatomical fidelity and reproducibility, raw MRI scans (DICOM 
 * **dcm2niix** (tested with `v1.0.20230411`): High-performance DICOM-to-NIfTI conversion.
 * **BrainPrep** (`v0.0.2`, CEA NeuroSpin): Quasiraw affine workflow automation (installed via `environment.yml`).
 
-*Fast Inference Optimization (`--skip-prep`):*
-If your volumes are already preprocessed, you can pass `--skip-prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
+*Fast Inference Optimization (`--skip_prep`):*
+If your volumes are already preprocessed, you can pass `--skip_prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
 
 ---
 
@@ -71,7 +71,7 @@ python run_pipeline.py --input_dicom /path/to/DICOM_study/
 python run_pipeline.py --input_t1 /path/to/T1w_volume.nii.gz --age 68.5
 
 # Direct inference on preprocessed MNI volume (skips registration and N4):
-python run_pipeline.py --input_t1 /path/to/preprocessed_MNI_volume.nii.gz --age 68.5 --skip-prep
+python run_pipeline.py --input_t1 /path/to/preprocessed_MNI_volume.nii.gz --age 68.5 --skip_prep
 ```
 
 ### 2. Full Inference with Explainable AI (`--all`)
@@ -92,7 +92,7 @@ python batch_inference.py \
 python batch_inference.py \
     --input_dir /path/to/preprocessed_datasets/ \
     --output_csv ./cohort_predictions.csv \
-    --skip-prep
+    --skip_prep
 ```
 
 ### 4. High-Throughput Batch Preprocessing (`batch_preprocess.py`)
@@ -111,15 +111,24 @@ python batch_preprocess.py \
     --n_jobs 8
 ```
 
-### 5. Local Scanner Calibration (`calibrate_local_scanner.py`)
-Fits linear regression coefficients on a local Cognitively Normal (CN) healthy control cohort to eliminate regression-to-the-mean age bias and correct target study cohorts:
+### 5. Local Scanner Age-Bias Calibration (`calibrate_local_scanner.py`)
+Fits Ordinary Least Squares (OLS) regression over local Cognitively Normal (CN) healthy controls to remove regression-to-the-mean age bias and scanner-specific contrast offsets:
+
 ```bash
-python calibrate_local_scanner.py \
-    --controls_csv ./controls_predictions.csv \
-    --clinical_csv ./clinical_predictions.csv \
-    --output_dir ./calibration_results
+# 1. Fit calibration and export parameters/diagnostic plots:
+python calibrate_local_scanner.py     --controls_csv ./controls_predictions.csv     --clinical_csv ./clinical_predictions.csv     --output_dir ./calibration_results
+
+# 2. (Optional) Automatically update config.yaml with newly fitted alpha and beta:
+python calibrate_local_scanner.py     --controls_csv ./controls_predictions.csv     --output_dir ./calibration_results     --update_config
 ```
-*(See complete workflow in [HOWTO_CALIBRATION.md](HOWTO_CALIBRATION.md))*
+
+#### How to Incorporate Calibration Parameters into Subsequent Runs:
+Once local calibration is computed, you can apply it to single-subject or batch inference in any of the following ways:
+* **Automatic `config.yaml` integration:** Run with `--update_config` (sets `alpha` and `beta` in `config.yaml`).
+* **Via `--calibration_file`:** Pass `--calibration_file ./calibration_results/local_calibration_parameters.csv` to `run_pipeline.py` or `batch_inference.py`.
+* **Via CLI parameters:** Pass `--alpha <val> --beta <val>` directly to `run_pipeline.py` or `batch_inference.py`.
+
+*(See detailed step-by-step tutorial, sample size recommendations N >= 30, and calibration cadence in [HOWTO_CALIBRATION.md](HOWTO_CALIBRATION.md))*
 
 ---
 
