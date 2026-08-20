@@ -18,26 +18,36 @@ class AgeBiasCalibrator:
         
     def calculate_bag(
         self, 
-        pred_age: float, 
-        chronological_age: Optional[float] = None
+        pred_age: Optional[float] = None, 
+        chronological_age: Optional[float] = None,
+        pred_ensemble: Optional[float] = None,
+        **kwargs
     ) -> Dict[str, Optional[float]]:
         """
         Calcula el BAG crudo y el bc-BAG calibrado.
         Si chronological_age es None o NaN, retorna None para las brechas.
         """
+        actual_pred = pred_age if pred_age is not None else pred_ensemble
+        if actual_pred is None:
+            raise ValueError("Must provide either pred_age or pred_ensemble.")
+            
         if chronological_age is None or chronological_age != chronological_age: # NaN check
             return {
                 "Chronological_Age": None,
                 "Raw_BAG": None,
-                "bc_BAG": None
+                "bc_BAG": None,
+                "raw_bag": None,
+                "bc_bag": None
             }
             
-        raw_bag = pred_age - chronological_age
-        bias = self.alpha * chronological_age + self.beta
-        bc_bag = raw_bag - bias
+        raw_bag = float(actual_pred - chronological_age)
+        bias = float(self.alpha * chronological_age + self.beta)
+        bc_bag = float(raw_bag - bias)
         
         return {
             "Chronological_Age": float(chronological_age),
-            "Raw_BAG": float(raw_bag),
-            "bc_BAG": float(bc_bag)
+            "Raw_BAG": raw_bag,
+            "bc_BAG": bc_bag,
+            "raw_bag": raw_bag,
+            "bc_bag": bc_bag
         }

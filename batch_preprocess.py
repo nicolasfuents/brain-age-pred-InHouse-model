@@ -94,8 +94,29 @@ def process_single_subject(
             prep_work_dir = temp_dir / "quasiraw"
             prep_work_dir.mkdir(parents=True, exist_ok=True)
             
+            env = os.environ.copy()
+            conda_prefix = os.environ.get("CONDA_PREFIX", sys.prefix)
+            env["PATH"] = f"{conda_prefix}/bin:" + env.get("PATH", "")
+            if "FREESURFER_HOME" not in env and "EBROOTFREESURFER" in env:
+                env["FREESURFER_HOME"] = env["EBROOTFREESURFER"]
+            if "FREESURFER_HOME" in env:
+                env["PATH"] = f"{env['FREESURFER_HOME']}/bin:" + env["PATH"]
+            if "FS_LICENSE" not in env:
+                fs_lic = Path.home() / ".licenses" / "freesurfer.lic"
+                if fs_lic.exists(): env["FS_LICENSE"] = str(fs_lic)
+            if "FSLDIR" in env:
+                env["PATH"] = f"{env['FSLDIR']}/bin:" + env["PATH"]
+                env["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+            dummy_dpkg = prep_work_dir / "dpkg"
+            with open(dummy_dpkg, "w") as f:
+                f.write("#!/bin/sh\necho ''\n")
+            dummy_dpkg.chmod(0o755)
+            env["PATH"] = f"{prep_work_dir}:" + env["PATH"]
+            ghost_dir = os.path.join(os.getcwd(), " " + str(prep_work_dir / "quasiraw"))
+            os.makedirs(ghost_dir, exist_ok=True)
+            
             cmd = ["bash", str(script_path), str(raw_nii), str(prep_work_dir)]
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            subprocess.run(cmd, env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             
             candidates = list((prep_work_dir / "quasiraw").glob("*desc-6apply*.nii.gz"))
             if not candidates:

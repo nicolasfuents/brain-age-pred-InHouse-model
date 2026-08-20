@@ -6,6 +6,11 @@ run_pipeline.py
 
 Main end-to-end orchestration pipeline for Brain Age Gap (BAG) estimation
 and Explainable AI (XAI) feature attribution maps (Integrated Gradients, Occlusion Sensitivity, Grad-Attention).
+Implements the exact training preprocessing pipeline:
+  - Skull stripping: mri_synthstrip
+  - Quasiraw MNI152 registration & N4 bias field correction: brainprep.sh
+  - Spatial & contrast harmonization: SOLID_v2 mask + P1-P99 clipping + MinMax[0, 1]
+  - 2.5D triplanar slice extraction & Ridge Stacker Ensemble inference
 """
 
 import sys
@@ -60,6 +65,53 @@ def load_precomputed_tensors(target_path: Path) -> Dict[str, torch.Tensor]:
             }
             
     raise FileNotFoundError(f"No se pudieron cargar tensores .pt válidos desde {target_path}")
+
+def run_brainprep_quasiraw(input_nii: Path, prep_dir: Path) -> Path:
+    """Ejecuta el pipeline original de entrenamiento brainprep.sh (SynthStrip + brainprep quasiraw)."""
+    script_path = REPO_ROOT / "src" / "preprocessing" / "register_and_n4.sh"
+    prep_dir.mkdir(parents=True, exist_ok=True)
+    
+    env = os.environ.copy()
+    
+    # 1. PATH setup
+    conda_prefix = os.environ.get("CONDA_PREFIX", sys.prefix)
+    env["PATH"] = f"{conda_prefix}/bin:" + env.get("PATH", "")
+    
+    # 2. FreeSurfer setup
+    if "FREESURFER_HOME" not in env and "EBROOTFREESURFER" in env:
+        env["FREESURFER_HOME"] = env["EBROOTFREESURFER"]
+    if "FREESURFER_HOME" in env:
+        env["PATH"] = f"{env['FREESURFER_HOME']}/bin:" + env["PATH"]
+    if "FS_LICENSE" not in env:
+        fs_lic = Path.home() / ".licenses" / "freesurfer.lic"
+        if fs_lic.exists():
+            env["FS_LICENSE"] = str(fs_lic)
+            
+    # 3. FSL setup
+    if "FSLDIR" in env:
+        env["PATH"] = f"{env['FSLDIR']}/bin:" + env["PATH"]
+        env["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+        
+    # 4. Dummy dpkg para brainprep (compatibilidad RHEL/CentOS/Gentoo/macOS)
+    dummy_dpkg = prep_dir / "dpkg"
+    with open(dummy_dpkg, "w") as f:
+        f.write("#!/bin/sh\necho ''\n")
+    dummy_dpkg.chmod(0o755)
+    env["PATH"] = f"{prep_dir}:" + env["PATH"]
+    
+    # 5. Ghost dir para parche ANTs N4 en brainprep
+    ghost_dir = os.path.join(os.getcwd(), " " + str(prep_dir / "quasiraw"))
+    os.makedirs(ghost_dir, exist_ok=True)
+    
+    # 6. Ejecutar script original
+    cmd = ["bash", str(script_path), str(input_nii), str(prep_dir)]
+    subprocess.run(cmd, env=env, check=True)
+    
+    # 7. Buscar salida desc-6apply
+    candidates = list((prep_dir / "quasiraw").glob("*desc-6apply*.nii.gz"))
+    if not candidates:
+        raise FileNotFoundError(f"El pipeline de brainprep no generó el archivo desc-6apply en {prep_dir / 'quasiraw'}")
+    return candidates[0]
 
 def run_single_subject(
     input_dicom: Optional[Path],
@@ -130,30 +182,22 @@ def run_single_subject(
         # 3. Comprobación de dimensiones espaciales (Nativo vs MNI152)
         nii = nib.load(str(nifti_path))
         if nii.shape != (182, 218, 182):
-            print(f"\n[+] Input volume is in native space {nii.shape}. Running automated quasiraw preprocessing (SynthStrip + FLIRT + N4)...")
+            print(f"\n[+] Input volume is in native space {nii.shape}. Running automated quasiraw preprocessing (brainprep.sh)...")
             missing_tools = []
-            for tool in ["mri_synthstrip", "flirt", "N4BiasFieldCorrection"]:
+            for tool in ["mri_synthstrip", "brainprep", "flirt", "N4BiasFieldCorrection"]:
                 if shutil.which(tool) is None:
                     missing_tools.append(tool)
             if missing_tools:
                 raise EnvironmentError(
-                    f"Native preprocessing requires external neuroimaging tools: {', '.join(missing_tools)}.\n"
+                    f"Native preprocessing requires external tools: {', '.join(missing_tools)}.\n"
                     "Please ensure FSL, ANTs, and FreeSurfer (mri_synthstrip) are installed and available in PATH\n"
                     "(on HPC clusters: 'module load fsl ants freesurfer && source $FSLDIR/etc/fslconf/fsl.sh'),\n"
                     "or provide a pre-registered MNI152 volume (182, 218, 182) with --skip-prep."
                 )
             
-            script_path = REPO_ROOT / "src" / "preprocessing" / "register_and_n4.sh"
             prep_dir = temp_dir / "quasiraw_out"
-            prep_dir.mkdir(parents=True, exist_ok=True)
-            cmd = ["bash", str(script_path), str(nifti_path), str(prep_dir)]
-            subprocess.run(cmd, check=True)
-            
-            candidates = list((prep_dir / "quasiraw").glob("*desc-6apply*.nii.gz"))
-            if not candidates:
-                raise FileNotFoundError(f"Preprocessing completed but desc-6apply NIfTI not found in {prep_dir / 'quasiraw'}")
-            nifti_path = candidates[0]
-            print(f"  * Volume successfully aligned to MNI152 1mm: {nifti_path}")
+            nifti_path = run_brainprep_quasiraw(nifti_path, prep_dir)
+            print(f"  * Volume successfully aligned to MNI152 1mm (quasiraw): {nifti_path}")
         else:
             print(f"  * Volume is already in MNI152 space (182, 218, 182).")
 
@@ -178,8 +222,9 @@ def run_single_subject(
         alpha=config["calibration"]["alpha"],
         beta=config["calibration"]["beta"]
     )
+    pred_ens_val = float(predictions.get("pred_ensemble", predictions.get("Pred_Ensemble")))
     bag_results = calibrator.calculate_bag(
-        pred_ensemble=predictions["pred_ensemble"],
+        pred_age=pred_ens_val,
         chronological_age=chronological_age
     )
     
@@ -187,12 +232,12 @@ def run_single_subject(
     final_results = {
         "subject_id": patient_id,
         "chronological_age": chronological_age,
-        "pred_axial": round(predictions["pred_axial"], 2),
-        "pred_coronal": round(predictions["pred_coronal"], 2),
-        "pred_sagittal": round(predictions["pred_sagittal"], 2),
-        "pred_ensemble": round(predictions["pred_ensemble"], 2),
-        "raw_bag": bag_results["raw_bag"],
-        "bc_bag": bag_results["bc_bag"]
+        "pred_axial": round(float(predictions.get("pred_axial", predictions.get("Pred_Axial"))), 2),
+        "pred_coronal": round(float(predictions.get("pred_coronal", predictions.get("Pred_Coronal"))), 2),
+        "pred_sagittal": round(float(predictions.get("pred_sagittal", predictions.get("Pred_Sagittal"))), 2),
+        "pred_ensemble": round(pred_ens_val, 2),
+        "raw_bag": round(bag_results["raw_bag"], 2) if bag_results["raw_bag"] is not None else None,
+        "bc_bag": round(bag_results["bc_bag"], 2) if bag_results["bc_bag"] is not None else None
     }
     
     print("\n" + "="*50)
@@ -220,31 +265,16 @@ def run_single_subject(
 
     # 7. Explicabilidad Médica XAI (Opcional con --all)
     if run_all_xai:
-        print(f"\n[+] Generando mapas de interpretabilidad XAI (--all)...")
+        print(f"\n[+] Generando suite completa de explicabilidad médica XAI (--all)...")
         xai_dir = output_dir / "xai"
-        xai_dir.mkdir(parents=True, exist_ok=True)
-        
-        xai_engine = XAIEngine(
-            models=predictor.models,
-            device=predictor.device
-        )
-        
-        xai_maps = xai_engine.generate_all_maps(
+        xai_engine = XAIEngine(predictor=predictor)
+        xai_engine.generate_explanations(
             tensors=tensors,
-            output_dir=xai_dir
+            predictions=final_results,
+            output_dir=xai_dir,
+            patient_id=patient_id
         )
-        
-        panel_path = xai_dir / "xai_overlays_panel.png"
-        plot_xai_overlays_panel(
-            t1_tensors=tensors,
-            xai_maps=xai_maps,
-            subject_id=patient_id,
-            chrono_age=chronological_age,
-            pred_age=final_results["pred_ensemble"],
-            raw_bag=final_results["raw_bag"],
-            output_path=panel_path
-        )
-        print(f"[✓] Panel de explicabilidad XAI guardado en: {panel_path}")
+        print(f"[✓] Suite de explicabilidad XAI generada exitosamente en: {xai_dir}")
 
     # Limpieza de temporales
     if temp_dir.exists():

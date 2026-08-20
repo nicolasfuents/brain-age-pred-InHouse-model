@@ -154,6 +154,10 @@ class TriplanarPredictor:
         pred_ensemble = float(ridge_model.predict(X_stack)[0])
         
         return {
+            "pred_axial": pred_ax,
+            "pred_coronal": pred_cor,
+            "pred_sagittal": pred_sag,
+            "pred_ensemble": pred_ensemble,
             "Pred_Axial": pred_ax,
             "Pred_Coronal": pred_cor,
             "Pred_Sagittal": pred_sag,
