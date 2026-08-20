@@ -227,15 +227,17 @@ def run_single_subject(
         else:
             print(f"  * Volume is already in MNI152 space (182, 218, 182).")
 
-        # 4. 2.5D slice extraction and P1-P99 normalization
+        # 4. 2.5D slice extraction, NIfTI slices, QC report and P1-P99 normalization
         mask_path = REPO_ROOT / config["atlases"]["mask"]
-        print(f"\n[+] Extracting 2.5D slices and normalizing intensities (P1-P99)...")
+        print(f"\n[+] Extracting 2.5D slices and generating Preprocessing QC report...")
         tensors = process_nifti_to_tensors(
             nii_path=nifti_path,
             mask_path=mask_path,
-            output_dir=output_dir / "tensors"
+            output_dir=output_dir / "tensors",
+            patient_id=patient_id,
+            save_qc=True
         )
-        print(f"  * Slices extracted successfully for Axial, Coronal, and Sagittal planes.")
+        print(f"  * [✓] Preprocessing QC report and NIfTI slice stacks saved to: {output_dir / 'qc'}")
 
     # 5. Triplanar Inference & Ridge Stacker (TTA active)
     checkpoints_dir = REPO_ROOT / config["models"]["checkpoints_dir"]
@@ -311,7 +313,6 @@ def run_single_subject(
 
     # 7. Explainable AI (XAI) Suite (Optional with --all)
     if run_all_xai:
-        print(f"\n[+] Generating Explainable AI (XAI) feature attribution suite (--all)...")
         xai_dir = output_dir / "xai"
         xai_engine = XAIEngine(predictor=predictor)
         xai_engine.generate_explanations(
@@ -320,7 +321,6 @@ def run_single_subject(
             output_dir=xai_dir,
             patient_id=patient_id
         )
-        print(f"[✓] XAI feature attribution suite generated successfully in: {xai_dir}")
 
     # Temporary cleanup
     if temp_dir.exists():

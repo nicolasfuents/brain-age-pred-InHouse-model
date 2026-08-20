@@ -20,7 +20,7 @@ The system integrates an ensemble of three specialized deep neural network archi
   - [3. Large-Scale Batch Inference](#3-large-scale-batch-inference-batch_inferencepy)
   - [4. High-Throughput Batch Preprocessing](#4-high-throughput-batch-preprocessing-batch_preprocesspy)
   - [5. Local Scanner Calibration](#5-local-scanner-calibration-calibrate_local_scannerpy)
-- [Model Interpretability Methods (XAI) with `--all`](#model-interpretability-methods-xai-with---all)
+- [Model Interpretability Methods (XAI)](#model-interpretability-methods-xai)
 - [Pipeline Outputs](#pipeline-outputs)
 - [Performance & Benchmark](#performance--benchmark)
 - [Disclaimer](#disclaimer)
@@ -121,7 +121,7 @@ For complete step-by-step instructions, minimum sample size requirements (N >= 3
 
 ---
 
-## Model Interpretability Methods (XAI) with `--all`
+## Model Interpretability Methods (XAI)
 
 When specifying the `--all` flag, the pipeline automatically generates 3 complementary visual explanation and feature attribution maps:
 

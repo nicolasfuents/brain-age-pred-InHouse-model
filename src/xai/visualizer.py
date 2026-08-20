@@ -3,73 +3,65 @@
 """
 visualizer.py
 
-Módulo de visualización diagnóstica clínica para explicabilidad médica (Medical XAI).
-Genera figuras con estética de publicación idénticas al script de referencia:
-1. Panel de atribución neural multimétodo (4x3: Planos x Métodos + Colorbars en fondo negro).
-2. Panel superpuesto multimétodo (1x3: Oclusión + Grad-Attention).
-3. Gráficos de barras horizontales de Top-10 ROIs contribuyentes anatómicos (IG y Oclusión).
+Visualization module for Explainable AI (XAI) feature attribution maps.
+Renders high-resolution multi-method 4x3 visual panels (T1 + IG + Occlusion + Grad-Attention)
+and horizontal bar charts for anatomical ROI contributions.
 """
 
-import os
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-from skimage.measure import label, regionprops
+from scipy.ndimage import label
+
+def voxel_level_cluster_filter(
+    heatmap: np.ndarray, 
+    threshold_ratio: float = 0.15, 
+    min_size: int = 20
+) -> np.ndarray:
+    """Removes isolated background noise clusters below minimum voxel size."""
+    if heatmap is None:
+        return heatmap
+    m = np.nanmax(np.abs(heatmap))
+    if m == 0:
+        return heatmap
+    thr = threshold_ratio * m
+    sig_mask = np.abs(heatmap) > thr
+    labeled, num_features = label(sig_mask)
+    cleaned = np.zeros_like(heatmap)
+    for i in range(1, num_features + 1):
+        c_mask = (labeled == i)
+        if c_mask.sum() >= min_size:
+            cleaned[c_mask] = heatmap[c_mask]
+    return cleaned
 
 def _apply_display_orient(arr: np.ndarray, plane: str) -> np.ndarray:
-    """Rota 90 grados en sentido antihorario (k=1) para coincidir con la orientación estándar del script de referencia."""
-    return np.rot90(np.asarray(arr), k=1)
+    """Applies anatomical display rotation for standard radiological view."""
+    if arr.ndim != 2:
+        return arr
+    if plane in ["axial", "coronal", "sagittal"]:
+        return np.rot90(arr)
+    return arr
 
-def _add_orient_labels(ax, plane: str):
-    """Agrega etiquetas anatómicas de orientación (R/L, A/P, S/I)."""
+def _add_orient_labels(ax: plt.Axes, plane: str):
+    """Adds radiological anatomical orientation labels (R/L, A/P, S/I)."""
+    t_props = dict(color="#94a3b8", fontsize=8, fontweight="bold", alpha=0.9)
     if plane == "axial":
-        lbl = {"left": "R", "right": "L", "top": "A", "bottom": "P"}
+        ax.text(0.04, 0.5, "R", transform=ax.transAxes, va="center", ha="left", **t_props)
+        ax.text(0.96, 0.5, "L", transform=ax.transAxes, va="center", ha="right", **t_props)
+        ax.text(0.5, 0.94, "A", transform=ax.transAxes, va="top", ha="center", **t_props)
+        ax.text(0.5, 0.04, "P", transform=ax.transAxes, va="bottom", ha="center", **t_props)
     elif plane == "coronal":
-        lbl = {"left": "R", "right": "L", "top": "S", "bottom": "I"}
-    else:  # sagittal
-        lbl = {"left": "P", "right": "A", "top": "S", "bottom": "I"}
-
-    ax.text(0.02, 0.50, lbl["left"], transform=ax.transAxes, va="center", ha="left",
-            fontsize=10, color="white", fontweight="bold",
-            bbox=dict(facecolor="black", alpha=0.4, edgecolor="none", pad=2))
-    ax.text(0.98, 0.50, lbl["right"], transform=ax.transAxes, va="center", ha="right",
-            fontsize=10, color="white", fontweight="bold",
-            bbox=dict(facecolor="black", alpha=0.4, edgecolor="none", pad=2))
-    ax.text(0.50, 0.03, lbl["bottom"], transform=ax.transAxes, va="bottom", ha="center",
-            fontsize=10, color="white", fontweight="bold",
-            bbox=dict(facecolor="black", alpha=0.4, edgecolor="none", pad=2))
-    ax.text(0.50, 0.97, lbl["top"], transform=ax.transAxes, va="top", ha="center",
-            fontsize=10, color="white", fontweight="bold",
-            bbox=dict(facecolor="black", alpha=0.4, edgecolor="none", pad=2))
-
-def voxel_level_cluster_filter(heatmap: np.ndarray, threshold_ratio: float = 0.15, min_size: int = 20) -> np.ndarray:
-    """Filtra ruido a nivel de vóxel preservando únicamente componentes conectados contiguos."""
-    thresh = threshold_ratio * np.nanmax(np.abs(heatmap))
-    clustered = np.zeros_like(heatmap)
-    
-    # Componentes positivos
-    pos_mask = heatmap > thresh
-    if pos_mask.any():
-        labeled_pos, _ = label(pos_mask, return_num=True)
-        for r in regionprops(labeled_pos):
-            if r.area >= min_size:
-                for coords in r.coords:
-                    idx = tuple(coords)
-                    clustered[idx] = heatmap[idx]
-                    
-    # Componentes negativos
-    neg_mask = heatmap < -thresh
-    if neg_mask.any():
-        labeled_neg, _ = label(neg_mask, return_num=True)
-        for r in regionprops(labeled_neg):
-            if r.area >= min_size:
-                for coords in r.coords:
-                    idx = tuple(coords)
-                    clustered[idx] = heatmap[idx]
-                    
-    return clustered
+        ax.text(0.04, 0.5, "R", transform=ax.transAxes, va="center", ha="left", **t_props)
+        ax.text(0.96, 0.5, "L", transform=ax.transAxes, va="center", ha="right", **t_props)
+        ax.text(0.5, 0.94, "S", transform=ax.transAxes, va="top", ha="center", **t_props)
+        ax.text(0.5, 0.04, "I", transform=ax.transAxes, va="bottom", ha="center", **t_props)
+    elif plane == "sagittal":
+        ax.text(0.04, 0.5, "A", transform=ax.transAxes, va="center", ha="left", **t_props)
+        ax.text(0.96, 0.5, "P", transform=ax.transAxes, va="center", ha="right", **t_props)
+        ax.text(0.5, 0.94, "S", transform=ax.transAxes, va="top", ha="center", **t_props)
+        ax.text(0.5, 0.04, "I", transform=ax.transAxes, va="bottom", ha="center", **t_props)
 
 def plot_xai_overlays_panel(
     t1_slices: Dict[str, np.ndarray],
@@ -79,44 +71,46 @@ def plot_xai_overlays_panel(
     patient_id: str = "PATIENT"
 ):
     """
-    Genera el panel diagnóstico consolidado de 4x3 (3 planos x 3 métodos + barras de color).
+    Renders 4x3 Multi-Method Visual Attribution Panel.
+    Rows: Axial, Coronal, Sagittal, Colorbars
+    Columns: Integrated Gradients, Occlusion Sensitivity, Grad-Attention
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     
-    fig, axs = plt.subplots(4, 3, figsize=(10, 10.5), gridspec_kw={'height_ratios': [1, 1, 1, 0.04]}, facecolor='black')
-    methods_display = ["ig", "occ", "attn"]
+    planes = ["axial", "coronal", "sagittal"]
+    methods = ["ig", "occ", "attn"]
     methods_labels = ["Integrated Gradients", "Occlusion Sensitivity", "Grad-Attention"]
-    planes_list = ["axial", "coronal", "sagittal"]
     
-    for r, plane in enumerate(planes_list):
-        for c, m_name in enumerate(methods_display):
+    fig, axs = plt.subplots(4, 3, figsize=(13, 13.5),
+                            gridspec_kw={"height_ratios": [1, 1, 1, 0.07]},
+                            facecolor="#0f172a")
+                            
+    for r, plane in enumerate(planes):
+        t1 = _apply_display_orient(t1_slices[plane], plane)
+        brain_mask = t1 > 0.01
+        
+        for c, m_name in enumerate(methods):
             ax = axs[r, c]
-            t1 = _apply_display_orient(t1_slices[plane], plane)
             ov = _apply_display_orient(overlay_slices[m_name][plane], plane)
             
-            brain_mask = t1 > 0.01
-            
-            if m_name == "occ":
+            if m_name == "ig":
+                cmap = "seismic"
+                norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
+                ov = np.where(brain_mask, ov, 0.0)
+            elif m_name == "occ":
+                cmap = "seismic"
+                norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
+                ov = np.where(brain_mask, ov, 0.0)
                 ov = voxel_level_cluster_filter(ov, threshold_ratio=0.15, min_size=20)
-                cmap = "seismic"
-                norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
-            elif m_name == "ig":
-                cmap = "seismic"
-                norm = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
-            else:  # attn
+            elif m_name == "attn":
                 cmap = "hot"
                 norm = mcolors.Normalize(vmin=0, vmax=1)
-                
-            ov = np.where(brain_mask, ov, 0.0)
-            if m_name == "attn":
                 ov = np.where(brain_mask, np.maximum(ov, 0.02), 0.0)
                 
             ax.imshow(t1, cmap="gray", interpolation="bicubic")
-            
             mask = np.abs(ov) > 1e-4
             ov_masked = np.where(mask, ov, np.nan)
-            
             ax.imshow(ov_masked, cmap=cmap, norm=norm, alpha=0.5, interpolation="bilinear")
             _add_orient_labels(ax, plane)
             ax.axis("off")
@@ -124,10 +118,10 @@ def plot_xai_overlays_panel(
             if r == 0:
                 ax.set_title(methods_labels[c], color="white", fontsize=12, pad=10, fontweight="bold")
             if c == 0:
-                ax.text(-0.08, 0.5, plane.upper(), transform=ax.transAxes, color="white",
+                ax.text(-0.08, 0.5, plane.upper(), transform=ax.transAxes, color="#38bdf8",
                         fontsize=12, fontweight="bold", rotation=90, va="center", ha="right")
                 
-    # Fila 4: Barras de color
+    # Row 4: Colorbars
     norm_seismic = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
     sm_seismic = plt.cm.ScalarMappable(cmap="seismic", norm=norm_seismic)
     sm_seismic.set_array([])
@@ -146,84 +140,20 @@ def plot_xai_overlays_panel(
     cbar_attn.set_label("Attention Weight", color="white", fontsize=8, labelpad=2)
     cbar_attn.ax.tick_params(labelsize=7, colors="white")
     
-    # Título superior
-    pred_ens = predictions.get("Pred_Ensemble", 0.0)
-    real_age = predictions.get("Chronological_Age")
-    bag_val = predictions.get("Raw_BAG")
+    pred_ens = predictions.get("pred_ensemble", predictions.get("Pred_Ensemble", 0.0))
+    real_age = predictions.get("chronological_age", predictions.get("Chronological_Age"))
+    bag_val = predictions.get("raw_bag", predictions.get("Raw_BAG"))
     
     if real_age is not None and bag_val is not None:
-        title_str = (f"Subject: {patient_id}\nMulti-Method Neural Attribution Overlays\n"
-                     f"Real Age: {real_age:.2f} yrs | Predicted Age: {pred_ens:.2f} yrs (BAG: {bag_val:+.2f} yrs)")
+        title_str = (f"Subject: {patient_id} | Multi-Method Feature Attribution Overlays\n"
+                     f"Chronological Age: {real_age:.2f} yr | Predicted Age: {pred_ens:.2f} yr | Raw BAG: {bag_val:+.2f} yr")
     else:
-        title_str = (f"Subject: {patient_id}\nMulti-Method Neural Attribution Overlays\n"
-                     f"Predicted Age (Ensemble): {pred_ens:.2f} yrs")
+        title_str = f"Subject: {patient_id} | Multi-Method Feature Attribution Overlays\nPredicted Brain Age: {pred_ens:.2f} yr"
                      
     fig.suptitle(title_str, color="white", fontsize=12, fontweight="bold", y=0.98)
     plt.tight_layout(rect=[0, 0.03, 1, 0.94])
-    fig.savefig(out_path, dpi=200, facecolor='black')
+    fig.savefig(out_path, dpi=200, facecolor="#0f172a", bbox_inches="tight")
     plt.close(fig)
-    print(f"[✓] Panel diagnóstico multimétodo guardado en: {out_path}")
-
-def plot_xai_superimposed(
-    t1_slices: Dict[str, np.ndarray],
-    overlay_slices: Dict[str, Dict[str, np.ndarray]],
-    predictions: Dict[str, Any],
-    out_path: Path,
-    patient_id: str = "PATIENT"
-):
-    """
-    Genera la figura de superposición conjunta (T1 + Oclusión + Grad-Attention) en 1 fila.
-    """
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    planes_list = ["axial", "coronal", "sagittal"]
-    fig_super, axs_super = plt.subplots(1, 3, figsize=(12, 4.5), facecolor='black')
-    
-    for c_idx, plane in enumerate(planes_list):
-        ax = axs_super[c_idx]
-        t1 = _apply_display_orient(t1_slices[plane], plane)
-        brain_mask = t1 > 0.01
-        
-        # 1. T1
-        ax.imshow(t1, cmap="gray", interpolation="bicubic")
-        
-        # 2. Occlusion
-        ov_occ = _apply_display_orient(overlay_slices["occ"][plane], plane)
-        ov_occ = np.where(brain_mask, ov_occ, 0.0)
-        ov_occ = voxel_level_cluster_filter(ov_occ, threshold_ratio=0.15, min_size=20)
-        mask_occ = np.abs(ov_occ) > 1e-4
-        ov_occ_masked = np.where(mask_occ, ov_occ, np.nan)
-        norm_seismic = mcolors.TwoSlopeNorm(vmin=-1, vcenter=0, vmax=1)
-        ax.imshow(ov_occ_masked, cmap="seismic", norm=norm_seismic, alpha=0.45, interpolation="bilinear")
-        
-        # 3. Grad-Attention
-        ov_attn = _apply_display_orient(overlay_slices["attn"][plane], plane)
-        ov_attn = np.where(brain_mask, np.maximum(ov_attn, 0.02), 0.0)
-        mask_attn = np.abs(ov_attn) > 1e-4
-        ov_attn_masked = np.where(mask_attn, ov_attn, np.nan)
-        norm_hot = mcolors.Normalize(vmin=0, vmax=1)
-        ax.imshow(ov_attn_masked, cmap="hot", norm=norm_hot, alpha=0.55, interpolation="bilinear")
-        
-        _add_orient_labels(ax, plane)
-        ax.set_title(plane.upper(), color="white", fontsize=11, fontweight="bold", pad=8)
-        ax.axis("off")
-        
-    pred_ens = predictions.get("Pred_Ensemble", 0.0)
-    real_age = predictions.get("Chronological_Age")
-    bag_val = predictions.get("Raw_BAG")
-    
-    if real_age is not None and bag_val is not None:
-        title_str = (f"Subject: {patient_id} — Superimposed Occ & Attn\n"
-                     f"Real Age: {real_age:.2f} yrs | Predicted Age: {pred_ens:.2f} yrs (BAG: {bag_val:+.2f} yrs)")
-    else:
-        title_str = f"Subject: {patient_id} — Superimposed Occ & Attn\nPredicted Age: {pred_ens:.2f} yrs"
-        
-    fig_super.suptitle(title_str, color="white", fontsize=12, fontweight="bold", y=0.98)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.92])
-    fig_super.savefig(out_path, dpi=200, facecolor='black')
-    plt.close(fig_super)
-    print(f"[✓] Panel superpuesto guardado en: {out_path}")
 
 def plot_top_rois_bar_chart(
     roi_stats: Dict[int, Dict[str, Any]],
@@ -234,9 +164,9 @@ def plot_top_rois_bar_chart(
     patient_id: str = "PATIENT"
 ):
     """
-    Genera el gráfico de barras horizontales con las 10 regiones anatómicas con mayor impacto.
-    Rojo = Acelera la edad cerebral predicha.
-    Azul = Rejuvenece / Disminuye la edad cerebral predicha.
+    Renders horizontal bar chart of top 10 contributing anatomical regions.
+    Red = Accelerates predicted brain age.
+    Blue = Decelerates predicted brain age (preservation).
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -249,46 +179,37 @@ def plot_top_rois_bar_chart(
     y_labels = [id2label.get(rid, f"ROI_{rid}") for rid, _ in top_rois]
     x_vals = [stat["mean_net"] for _, stat in top_rois]
     
-    colors = ["#ff5a5f" if val >= 0 else "#3182bd" for val in x_vals]
+    colors = ["#ef4444" if val >= 0 else "#3b82f6" for val in x_vals]
     
-    fig, ax = plt.subplots(figsize=(7, 4.5), facecolor='white')
-    bars = ax.barh(y_labels, x_vals, color=colors, height=0.6, edgecolor='none')
+    fig, ax = plt.subplots(figsize=(7.5, 4.8), facecolor="white")
+    bars = ax.barh(y_labels, x_vals, color=colors, height=0.6, edgecolor="none")
     
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.spines['left'].set_color('#cccccc')
-    ax.spines['bottom'].set_color('#cccccc')
-    ax.tick_params(axis='both', colors='#333333', labelsize=9)
-    ax.axvline(0, color='#666666', linestyle='--', linewidth=0.8, alpha=0.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#cbd5e1")
+    ax.spines["bottom"].set_color("#cbd5e1")
+    ax.tick_params(axis="both", colors="#334155", labelsize=9)
+    ax.axvline(0, color="#64748b", linestyle="--", linewidth=0.8, alpha=0.6)
     
     max_abs = max(abs(val) for val in x_vals) if x_vals else 1.0
     offset = 0.02 * max_abs
     for bar in bars:
         width = bar.get_width()
         if abs(width) >= 0.18 * max_abs:
-            if width >= 0:
-                x_pos = width - offset
-                ha_align = 'right'
-            else:
-                x_pos = width + offset
-                ha_align = 'left'
-            text_color = 'white'
+            x_pos = width - offset if width >= 0 else width + offset
+            ha_align = "right" if width >= 0 else "left"
+            text_color = "white"
         else:
-            if width >= 0:
-                x_pos = width + offset
-                ha_align = 'left'
-            else:
-                x_pos = width - offset
-                ha_align = 'right'
-            text_color = '#333333'
+            x_pos = width + offset if width >= 0 else width - offset
+            ha_align = "left" if width >= 0 else "right"
+            text_color = "#1e293b"
             
         ax.text(x_pos, bar.get_y() + bar.get_height()/2, f"{width:+.2f}",
-                va='center', ha=ha_align, fontsize=8, color=text_color, fontweight='bold')
+                va="center", ha=ha_align, fontsize=8, color=text_color, fontweight="bold")
                 
     ax.set_title(f"Top 10 Contributor ROIs ({method_title})\nSubject: {patient_id}", 
-                 fontsize=11, pad=12, fontweight='bold', color='#111111')
-    ax.set_xlabel("Net Attribution (- Decelerates Age, + Accelerates Age)", fontsize=9, color='#333333', labelpad=8)
+                 fontsize=11, pad=12, fontweight="bold", color="#0f172a")
+    ax.set_xlabel("Net Attribution (- Decelerates Age, + Accelerates Age)", fontsize=9, color="#475569", labelpad=8)
     plt.tight_layout()
-    fig.savefig(out_path, dpi=200, facecolor='white', bbox_inches='tight')
+    fig.savefig(out_path, dpi=200, facecolor="white", bbox_inches="tight")
     plt.close(fig)
-    print(f"[✓] Gráfico Top 10 ROIs ({method_name}) guardado en: {out_path}")
