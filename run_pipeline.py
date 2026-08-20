@@ -132,7 +132,7 @@ def run_single_subject(
         if nii.shape != (182, 218, 182):
             print(f"\n[+] Input volume is in native space {nii.shape}. Running automated quasiraw preprocessing (SynthStrip + FLIRT + N4)...")
             missing_tools = []
-            for tool in ["mri_synthstrip", "brainprep"]:
+            for tool in ["mri_synthstrip", "flirt", "N4BiasFieldCorrection"]:
                 if shutil.which(tool) is None:
                     missing_tools.append(tool)
             if missing_tools:

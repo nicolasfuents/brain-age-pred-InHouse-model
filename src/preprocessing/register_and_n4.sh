@@ -1,8 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ==============================================================================
+# register_and_n4.sh
+# Pipeline estándar de registro quasiraw hacia MNI152 (1mm) y corrección N4.
+# Herramientas requeridas: mri_synthstrip, fslreorient2std, fslmaths, flirt, N4BiasFieldCorrection
+# ==============================================================================
+
 INPUT_NII="$1"
 PREP_DIR="$2"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+TARGET_TEMPLATE="${REPO_ROOT}/data/atlases/mni152_t1_1mm_brain.nii.gz"
+
+if [ ! -f "${TARGET_TEMPLATE}" ]; then
+    # Fallback a FSLDIR si existe
+    if [ -n "${FSLDIR:-}" ] && [ -f "${FSLDIR}/data/standard/MNI152_T1_1mm_brain.nii.gz" ]; then
+        TARGET_TEMPLATE="${FSLDIR}/data/standard/MNI152_T1_1mm_brain.nii.gz"
+    else
+        echo "[!] Error: No se encontró la plantilla MNI152 en ${TARGET_TEMPLATE}" >&2
+        exit 1
+    fi
+fi
 
 MASK_DIR="${PREP_DIR}/masks"
 QUASIRAW_DIR="${PREP_DIR}/quasiraw"
@@ -18,31 +38,27 @@ if [ -f "${subject_quasiraw}" ]; then
     exit 0
 fi
 
-# Parche de compatibilidad de brainprep para sistemas sin dpkg (RHEL, CentOS, Gentoo, macOS)
-DUMMY_BIN=$(mktemp -d)
-if ! command -v dpkg &> /dev/null; then
-    cat << 'EOF_DPKG' > "${DUMMY_BIN}/dpkg"
-#!/bin/sh
-echo "dummy dpkg"
-EOF_DPKG
-    chmod +x "${DUMMY_BIN}/dpkg"
-    export PATH="${DUMMY_BIN}:${PATH}"
-fi
+WORKDIR=$(mktemp -d -t quasiraw_XXXXXX)
+trap 'rm -rf "${WORKDIR}"' EXIT
 
-# Parche para bug de ANTs en brainprep (directorio fantasma con espacio)
-mkdir -p " ${QUASIRAW_DIR}" 2>/dev/null || true
-
-tmp_brain=$(mktemp --suffix=.nii.gz)
-
-# 1) mri_synthstrip
+echo "  * [1/5] Extracción cerebral con mri_synthstrip..."
 if [ ! -f "${subject_mask}" ]; then
-    mri_synthstrip -i "${INPUT_NII}" -o "${tmp_brain}" -m "${subject_mask}"
-    rm -f "${tmp_brain}"
+    mri_synthstrip -i "${INPUT_NII}" -o "${WORKDIR}/synth_brain.nii.gz" -m "${subject_mask}"
 fi
 
-# 2) brainprep quasiraw
-brainprep quasiraw "${INPUT_NII}" "${subject_mask}" "${QUASIRAW_DIR}" --no-bids
+echo "  * [2/5] Reorientación estándar (fslreorient2std)..."
+fslreorient2std "${INPUT_NII}" "${WORKDIR}/std.nii.gz"
+fslreorient2std "${subject_mask}" "${WORKDIR}/stdmask.nii.gz"
 
-# 3) Limpieza
-rm -rf "${DUMMY_BIN}" " ${QUASIRAW_DIR}" 2>/dev/null || true
-find "${QUASIRAW_DIR}" -maxdepth 1 -type f -name "${base_noext}*" ! -name "*desc-6apply*" -exec rm -f {} \;
+echo "  * [3/5] Enmascaramiento y corrección de inhomogeneidad N4..."
+fslmaths "${WORKDIR}/std.nii.gz" -mas "${WORKDIR}/stdmask.nii.gz" "${WORKDIR}/brain.nii.gz"
+N4BiasFieldCorrection -d 3 -i "${WORKDIR}/brain.nii.gz" -o "${WORKDIR}/bfc.nii.gz" -s 4 -c [50x50x50x50,0.0001] -b [200]
+
+echo "  * [4/5] Registro afín a MNI152 1mm (FLIRT 12-DOF)..."
+flirt -in "${WORKDIR}/bfc.nii.gz" -ref "${TARGET_TEMPLATE}" -out "${WORKDIR}/reg.nii.gz" -omat "${WORKDIR}/trf.mat" -dof 12 -cost corratio
+
+echo "  * [5/5] Aplicación de transformación afín y recorte de salida..."
+flirt -in "${WORKDIR}/stdmask.nii.gz" -ref "${WORKDIR}/reg.nii.gz" -out "${WORKDIR}/regmask.nii.gz" -applyxfm -init "${WORKDIR}/trf.mat" -interp nearestneighbour
+fslmaths "${WORKDIR}/reg.nii.gz" -mas "${WORKDIR}/regmask.nii.gz" "${subject_quasiraw}"
+
+echo "  * Preprocesamiento quasiraw finalizado exitosamente: ${subject_quasiraw}"
