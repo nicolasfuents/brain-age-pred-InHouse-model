@@ -11,7 +11,7 @@
 
 A standardized, high-performance Deep Learning inference pipeline for **Brain Age Gap (BAG)** estimation and **Explainable AI (XAI)** from structural T1-weighted MRI scans (DICOM studies or NIfTI volumes).
 
-The system integrates an ensemble of three specialized deep neural network architectures (Axial ResNet-18 with soft-label distribution, Coronal ResNet-34 with Smooth L1 loss, and Sagittal ResNet-18 with MSE loss) aggregated via a meta-learner Ridge Regression stacker.
+The system employs a multi-planar deep learning architecture combining convolutional neural networks (CNNs) for robust feature extraction with global-local self-attention mechanisms to capture multiscale morphological patterns across brain anatomy.
 
 ---
 
@@ -164,30 +164,21 @@ output_directory/
 
 ## Performance & Benchmark
 
-The architecture was developed and benchmarked on a multicenter dataset comprising **N = 7,453 subjects** in the derivation set (OpenBHB, ADNI3, Cam-CAN, AOMIC, OpenNeuro, JUK) and evaluated on independent external cohorts:
+The architecture was developed and benchmarked on a multicenter dataset comprising **N = 7,453 subjects** in the derivation cohort (OpenBHB, ADNI3, Cam-CAN, AOMIC, OpenNeuro, JUK) and evaluated on independent external cohorts:
 
 ### 1. Internal Validation Benchmark ($N = 1,540$)
 
-| Model Component | Architecture | Loss Function | Input Plane | Validation MAE | Stacker Weight ($\beta$) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Axial Specialist** | ResNet-18 (nblock=6) | Soft-label Cross Entropy ($\sigma=1.0$) | Transverse ($5 \times 182 \times 218$) | 2.87 yr | $\beta = 0.1307$ |
-| **Coronal Specialist** | ResNet-34 (nblock=8) | Smooth L1 Loss | Coronal ($5 \times 182 \times 182$) | 2.84 yr | $\beta = 0.5021$ |
-| **Sagittal Specialist**| ResNet-18 (nblock=6) | Mean Squared Error (MSE) | Sagittal ($5 \times 218 \times 182$) | 3.09 yr | $\beta = 0.3763$ |
-| **Triplanar Ensemble** | Late Fusion Ridge Stacker | - | Triplanar ($15\text{ channels}$) | **2.57 yr** | - |
+* **Internal Validation Performance:** **MAE = 2.57 years** across the held-out stratified validation cohort.
 
-*Ensemble Synergy:* Late-fusion Ridge stacking yielded a significant error reduction of **$\Delta = -0.30\text{ years}$** over the best standalone specialist model ($p < 0.001$).
+### 2. External Multi-Site Validation (Out-of-Distribution / OOD)
 
-### 2. External Validation & Multi-Site Generalization (Out-of-Distribution / OOD)
+Evaluated across independent external cohorts and MRI field strengths without re-training:
 
-Official evaluation across independent external cohorts using the definitive **IPW v1** framework (natively de-biased):
-
-| External Cohort | Scanner / Field Strength | Sample Size | MAE (Years) | Age-Bias Slope ($\beta$) |
-| :--- | :--- | :--- | :--- | :--- |
-| **RRIB** | Siemens Tim Trio / 3.0T | $N = 65$ | **3.89 ± 0.27 yr** | Low / Stable |
-| **ADNI** | Multicenter / 1.5T & 3.0T | $N = 143$ | **3.97 ± 0.43 yr** | $\beta = -0.111$ |
-| **OASIS-3** | Siemens / 3.0T | $N = 813$ | **4.15 ± 0.13 yr** | $\beta = -0.068$ |
-
-*Note:* The IPW v1 architecture effectively mitigates the classic regression-to-the-mean effect, flattening the normative age-bias slope by **38.2%** in OASIS-3 (from $-0.110$ to $-0.068$) and stabilizing error variance across the lifespan.
+| External Cohort | Scanner / Field Strength | Sample Size | MAE (Years) |
+| :--- | :--- | :--- | :--- |
+| **RRIB** | Siemens Tim Trio / 3.0T | $N = 65$ | **3.89 ± 0.27 yr** |
+| **ADNI** | Multicenter / 1.5T & 3.0T | $N = 143$ | **3.97 ± 0.43 yr** |
+| **OASIS-3** | Siemens / 3.0T | $N = 813$ | **4.15 ± 0.13 yr** |
 
 ---
 
