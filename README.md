@@ -1,7 +1,12 @@
 # Brain Age Prediction (In-House Triplanar Ensemble & Medical XAI Framework)
 
+<p align="center">
+  <img src="assets/banner.png" alt="Brain Age Prediction & Medical XAI Banner" width="100%">
+</p>
+
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-red.svg)](https://pytorch.org/)
+[![Model Release](https://img.shields.io/badge/Release-v1.0.0-purple.svg)](https://github.com/nicolasfuents/brain-age-pred-InHouse-model/releases/tag/v1.0.0)
 [![License](https://img.shields.io/badge/License-Academic-green.svg)]()
 
 Repositorio universal y autónomo para la estimación de la **Edad Cerebral (Brain Age Gap, BAG)**, calibración local de escáneres/resonadores externos, y generación de **mapas de explicabilidad diagnóstica (Medical XAI)** a partir de resonancias magnéticas estructurales T1 (compatibilidad nativa con carpetas/archivos `.zip` **DICOM**, volúmenes **NIfTI** y tensores preprocesados **`.pt`**).
