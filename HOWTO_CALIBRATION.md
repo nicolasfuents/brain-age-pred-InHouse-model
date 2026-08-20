@@ -44,7 +44,7 @@ python batch_inference.py \
 The resulting `controls_predictions.csv` contains the required fields:
 * `Chronological_Age`: Subject chronological age at scan time.
 * `Pred_Ensemble`: Brain age predicted by the triplanar ensemble.
-* `Raw_BAG`: Raw gap metric ($	ext{Pred\_Ensemble} - 	ext{Chronological\_Age}$).
+* `Raw_BAG`: Raw gap metric ($\text{Predicted Age} - \text{Chronological Age}$).
 
 ---
 
@@ -60,8 +60,8 @@ python calibrate_local_scanner.py \
 
 ### Generated Artifacts:
 1. **`local_calibration_parameters.csv`**:
-   * $lpha$ (**alpha / Slope**): Regression-to-the-mean rate of the model.
-   * $eta$ (**beta / Intercept**): Scanner-specific systematic offset.
+   * $\alpha$ (**alpha / Slope**): Regression-to-the-mean rate of the model.
+   * $\beta$ (**beta / Intercept**): Scanner-specific systematic offset.
 2. **`local_calibration_curve.png`**:
    * Comparative scatter plot showing pre-calibration ($r \neq 0$) versus post-calibration ($r = 0.000$, orthogonalized) distributions.
 
@@ -69,7 +69,7 @@ python calibrate_local_scanner.py \
 
 ## Step 3: Bias-Correct the Local Clinical Cohort (MCI, AD, etc.)
 
-Once the scanner-specific coefficients $lpha$ and $eta$ are fitted, apply the calibration to your clinical patient cohort acquired on the same scanner:
+Once the scanner-specific coefficients $\alpha$ and $\beta$ are fitted, apply the calibration to your clinical patient cohort acquired on the same scanner:
 
 ```bash
 # 1. Run inference on clinical cohort
@@ -85,12 +85,12 @@ python calibrate_local_scanner.py \
 ```
 
 The output file `calibration_results/calibrated_clinical_predictions.csv` contains the bias-corrected metric:
-$$\text{bc-BAG} = \text{Raw\_BAG} - (\alpha \cdot \text{Chronological\_Age} + \beta)$$
+$$\text{bc-BAG} = \text{Raw BAG} - (\alpha \cdot \text{Chronological Age} + \beta)$$
 
 ---
 
 ## Clinical Interpretation of `bc-BAG`
 
-* **$	ext{bc-BAG} \approx 0$ years:** Normative brain aging aligned with chronological age.
-* **$	ext{bc-BAG} > +3.0$ to $+5.0$ years:** Biologically accelerated brain aging (associated with neurodegenerative atrophy, accelerated conversion from MCI to AD, and higher amyloid/tau burden).
-* **$	ext{bc-BAG} < -3.0$ years:** Resilient brain aging / structural preservation.
+* $\text{bc-BAG} \approx 0\text{ years}$: Normative brain aging aligned with chronological age.
+* $\text{bc-BAG} > +3.0\text{ to }+5.0\text{ years}$: Biologically accelerated brain aging (associated with neurodegenerative atrophy, accelerated conversion from MCI to AD, and higher amyloid/tau burden).
+* $\text{bc-BAG} < -3.0\text{ years}$: Resilient brain aging / structural preservation.

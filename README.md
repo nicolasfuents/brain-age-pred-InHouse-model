@@ -15,6 +15,20 @@ The model implements an optimized 2.5D architecture operating on only 5 represen
 
 ---
 
+## Table of Contents
+
+- [Installation & Requirements](#installation--requirements)
+- [Usage Guide](#usage-guide)
+  - [1. Single-Subject Fast Inference](#1-single-subject-fast-inference-run_pipelinepy)
+  - [2. Full Inference with Diagnostic XAI](#2-full-inference-with-diagnostic-xai---all)
+  - [3. Large-Scale Batch Inference](#3-large-scale-batch-inference-batch_inferencepy)
+  - [4. Local Scanner Calibration](#4-local-scanner-calibration-calibrate_local_scannerpy)
+- [Medical Interpretability Methods (XAI)](#medical-interpretability-methods-xai-with---all)
+- [Pipeline Outputs](#pipeline-outputs)
+- [Performance & Benchmark](#performance--benchmark)
+
+---
+
 ## Installation & Requirements
 
 ### 1. Clone the repository
@@ -53,20 +67,28 @@ python run_pipeline.py --input_t1 /path/to/preprocessed_MNI_volume.nii.gz --age 
 python run_pipeline.py --input_dicom /path/to/DICOM_study/ --all
 ```
 
-### 3. Batch Inference (`batch_inference.py`)
-Processes a directory of scans (NIfTI files, `.pt` tensors, or DICOM folders/zips) and outputs a consolidated CSV ready for calibration:
+### 3. Large-Scale Batch Inference (`batch_inference.py`)
+Designed for high-throughput automated processing of extensive research cohorts and clinical databases (supporting directories of NIfTI volumes, pre-extracted `.pt` tensors, or raw DICOM folders/zips):
 ```bash
-# Standard batch inference:
-python batch_inference.py     --input_dir /path/to/scans_directory/     --output_csv ./batch_predictions.csv
+# High-throughput batch processing across a full cohort directory:
+python batch_inference.py \
+    --input_dir /path/to/cohort_scans_directory/ \
+    --output_csv ./cohort_predictions.csv
 
-# Fast batch inference on preprocessed datasets:
-python batch_inference.py     --input_dir /path/to/preprocessed_datasets/     --output_csv ./batch_predictions.csv     --skip-prep
+# Fast batch inference on pre-registered MNI datasets:
+python batch_inference.py \
+    --input_dir /path/to/preprocessed_datasets/ \
+    --output_csv ./cohort_predictions.csv \
+    --skip-prep
 ```
 
 ### 4. Local Scanner Calibration (`calibrate_local_scanner.py`)
 Fits linear regression coefficients on a local Cognitively Normal (CN) healthy control cohort to eliminate regression-to-the-mean age bias and correct clinical patient cohorts:
 ```bash
-python calibrate_local_scanner.py     --controls_csv ./controls_predictions.csv     --clinical_csv ./clinical_predictions.csv     --output_dir ./calibration_results
+python calibrate_local_scanner.py \
+    --controls_csv ./controls_predictions.csv \
+    --clinical_csv ./clinical_predictions.csv \
+    --output_dir ./calibration_results
 ```
 *(See complete workflow in [HOWTO_CALIBRATION.md](HOWTO_CALIBRATION.md))*
 
@@ -78,7 +100,7 @@ When specifying the `--all` flag, the pipeline automatically generates 3 complem
 
 1. **Integrated Gradients (Signed IG):** Voxel-wise gradient path integration from a baseline to the input image, highlighting microstructural features that accelerate (+) or decelerate (-) predicted brain age.
 2. **Occlusion Sensitivity:** Systematic sliding-patch perturbation mapping causal prediction shifts across brain anatomy.
-3. **Grad-Attention (Transformer Rollout):** Self-attention rollout gated by backpropagated gradients ($|\text{Attention} \odot \text{Gradient}|$), isolating long-range anatomical circuits driving the prediction.
+3. **Grad-Attention (Transformer Rollout):** Self-attention rollout gated by backpropagated gradients, isolating long-range anatomical circuits driving the prediction.
 
 ---
 
@@ -98,6 +120,7 @@ Computation time and memory consumption are benchmarked across the pipeline stag
 | :--- | :--- | :--- | :--- |
 | **Triplanar Inference (3 Models + TTA)** | GPU (NVIDIA H100 80GB) | **~0.55 s** (~1.8 subjects/s) | **< 1.0 GB VRAM** (954 MB peak) |
 | **Triplanar Inference (3 Models + TTA)** | CPU (AMD EPYC 9654) | **~10.8 s** | ~1.2 GB RAM |
-| **Quasiraw Preprocessing (FLIRT + N4)** | CPU / GPU | **~45 – 60 s** | ~2.0 GB RAM |
+| **Quasiraw Preprocessing (FLIRT + N4)** | CPU + GPU (SynthStrip on GPU) | **~40 – 50 s** | ~2.0 GB RAM |
+| **Quasiraw Preprocessing (FLIRT + N4)** | CPU Only (Pure Host Execution) | **~55 – 75 s** | ~2.0 GB RAM |
 
 *Note:* With an inference footprint under 1 GB VRAM, the models can run locally on standard entry-level consumer GPUs (e.g., laptop GTX 1650, RTX 3050) or CPU-only server instances.
