@@ -229,6 +229,18 @@ def main():
             if raw_bag is not None and resolved_alpha is not None and resolved_beta is not None:
                 bc_bag = round(raw_bag - (resolved_alpha * chronological_age + resolved_beta), 2)
                 
+            profile_label = None
+            eval_bag = bc_bag if bc_bag is not None else raw_bag
+            if eval_bag is not None:
+                if eval_bag >= 8.0:
+                    profile_label = "ADVANCED ATROPHY (Marked structural senescence | BAG >= +2 SD)"
+                elif eval_bag >= 4.0:
+                    profile_label = "ACCELERATED (Advanced morphological aging | +1 SD <= BAG < +2 SD)"
+                elif eval_bag >= -4.0:
+                    profile_label = "NORMATIVE (Age-congruent brain structure | Within +/- 1 SD)"
+                else:
+                    profile_label = "PRESERVED (Youthful structural reserve | BAG < -1 SD)"
+
             res = {
                 "Patient_ID": patient_id,
                 "Chronological_Age": chronological_age,
@@ -238,7 +250,8 @@ def main():
                 "Pred_Coronal": round(float(predictions.get("pred_coronal", predictions.get("Pred_Coronal"))), 2),
                 "Pred_Sagittal": round(float(predictions.get("pred_sagittal", predictions.get("Pred_Sagittal"))), 2),
                 "Raw_BAG": raw_bag,
-                "bc_BAG": bc_bag
+                "bc_BAG": bc_bag,
+                "Brain_Age_Profile": profile_label
             }
             
             if xai_engine:
