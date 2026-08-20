@@ -3,39 +3,46 @@
 """
 predictor.py
 
-Motor de inferencia triplanar y ensamble Ridge.
-Carga los modelos entrenados para cada plano anatómico, ejecuta la pasada hacia adelante con TTA
-y calcula la predicción combinada de edad cerebral (Pred_Ensemble).
+Triplanar Ensemble Inference Engine with Test-Time Augmentation (TTA).
+Orchestrates loading specialist networks (Axial, Coronal, Sagittal) and Ridge Regression stacker.
 """
 
 from pathlib import Path
 from typing import Dict, Any, Optional
+import warnings
 import torch
 import torch.nn as nn
 import numpy as np
 import joblib
-from src.models.global_local_transformer import GlobalLocalTransformer
+
+# Suppress serialization and version warnings for clean CLI output
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
+
+from ..models.gl_transformer import GlobalLocalTransformer
+from ..models.ridge_stacker import RidgeStacker
 
 class TriplanarPredictor:
     def __init__(
         self, 
         checkpoints_dir: Path, 
-        device: Optional[torch.device] = None,
+        device: Optional[str] = None,
         use_tta: bool = True
     ):
         self.checkpoints_dir = Path(checkpoints_dir)
-        self.device = device or (torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         self.use_tta = use_tta
         
-        # Bins para Soft Labels (1 a 100 años)
-        self.bins = torch.arange(1, 101, dtype=torch.float32).to(self.device)
-        
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+            
         self._check_and_download_checkpoints()
         self._load_models()
         self._load_stacker()
-        
+
     def _check_and_download_checkpoints(self):
-        """Verifica la existencia de los checkpoints; si faltan, intenta descargarlos."""
+        """Checks for checkpoint availability and triggers download if missing."""
         required = [
             "model_axial_resnet18_soft.pt",
             "model_coronal_resnet34_smoothl1.pt",
@@ -44,21 +51,20 @@ class TriplanarPredictor:
         ]
         missing = [f for f in required if not (self.checkpoints_dir / f).exists()]
         if missing:
-            print(f"[!] Checkpoints faltantes en {self.checkpoints_dir}: {missing}")
             try:
-                from download_checkpoints import ensure_checkpoints
+                from ..utils.download_weights import ensure_checkpoints
                 ensure_checkpoints(self.checkpoints_dir)
             except Exception as e:
-                print(f"[!] No se pudo descargar automáticamente: {e}")
-                print(f"    Por favor ejecuta 'python download_checkpoints.py' o copia los archivos .pt en {self.checkpoints_dir}")
+                print(f"[!] Could not automatically download weights: {e}")
+                print(f"    Please run 'python download_checkpoints.py' or copy weights into {self.checkpoints_dir}")
 
     def _load_models(self):
-        """Instancia y carga los pesos de los 3 modelos de plano."""
+        """Initializes and loads weights for all 3 specialized plane models."""
         # 1. Axial (ResNet-18 Soft Labels, nblock=6)
         self.model_axial = GlobalLocalTransformer(
             inplace=5, patch_size=64, step=32, nblock=6, backbone="resnet18", num_classes=100
         ).to(self.device)
-        ax_ckpt = torch.load(self.checkpoints_dir / "model_axial_resnet18_soft.pt", map_location=self.device)
+        ax_ckpt = torch.load(self.checkpoints_dir / "model_axial_resnet18_soft.pt", map_location=self.device, weights_only=False)
         self.model_axial.load_state_dict(ax_ckpt["model_state_dict"] if "model_state_dict" in ax_ckpt else ax_ckpt)
         self.model_axial.eval()
         
@@ -66,100 +72,91 @@ class TriplanarPredictor:
         self.model_coronal = GlobalLocalTransformer(
             inplace=5, patch_size=64, step=32, nblock=8, backbone="resnet34", num_classes=1
         ).to(self.device)
-        cor_ckpt = torch.load(self.checkpoints_dir / "model_coronal_resnet34_smoothl1.pt", map_location=self.device)
+        cor_ckpt = torch.load(self.checkpoints_dir / "model_coronal_resnet34_smoothl1.pt", map_location=self.device, weights_only=False)
         self.model_coronal.load_state_dict(cor_ckpt["model_state_dict"] if "model_state_dict" in cor_ckpt else cor_ckpt)
         self.model_coronal.eval()
         
-        # 3. Sagital (ResNet-18 MSE, nblock=6)
+        # 3. Sagittal (ResNet-18 MSE, nblock=6)
         self.model_sagittal = GlobalLocalTransformer(
             inplace=5, patch_size=64, step=32, nblock=6, backbone="resnet18", num_classes=1
         ).to(self.device)
-        sag_ckpt = torch.load(self.checkpoints_dir / "model_sagittal_resnet18_mse.pt", map_location=self.device)
+        sag_ckpt = torch.load(self.checkpoints_dir / "model_sagittal_resnet18_mse.pt", map_location=self.device, weights_only=False)
         self.model_sagittal.load_state_dict(sag_ckpt["model_state_dict"] if "model_state_dict" in sag_ckpt else sag_ckpt)
         self.model_sagittal.eval()
 
     def _load_stacker(self):
-        """Carga el modelo de regresión Ridge para el ensamble."""
+        """Loads trained Ridge Stacker regression model."""
         stacker_path = self.checkpoints_dir / "ridge_triplanar_ensemble.joblib"
         if not stacker_path.exists():
-            raise FileNotFoundError(f"No se encontró el Ridge Stacker en {stacker_path}")
+            raise FileNotFoundError(f"Ridge stacker not found at {stacker_path}")
         self.stacker = joblib.load(stacker_path)
 
     def _forward_axial(self, tensor: torch.Tensor) -> float:
-        """Inferencia Axial con Soft-Argmax y TTA opcional."""
+        """Axial inference with soft-argmax expectation and optional TTA."""
         if tensor.ndim == 3:
             tensor = tensor.unsqueeze(0)
         tensor = tensor.to(self.device)
         
         with torch.no_grad():
             outs = self.model_axial(tensor)
-            logits = outs[0] if isinstance(outs, (list, tuple)) else outs
-            probs = torch.softmax(logits, dim=1)
-            pred_orig = (probs * self.bins).sum(dim=1).item()
+            probs = torch.softmax(outs, dim=1)
+            bins = torch.arange(100, dtype=torch.float32, device=self.device).unsqueeze(0)
+            pred_base = float(torch.sum(probs * bins, dim=1).item())
             
             if self.use_tta:
-                # TTA: Flip horizontal (eje X / ancho)
-                tensor_flip = torch.flip(tensor, dims=[-1])
-                outs_flip = self.model_axial(tensor_flip)
-                logits_flip = outs_flip[0] if isinstance(outs_flip, (list, tuple)) else outs_flip
-                probs_flip = torch.softmax(logits_flip, dim=1)
-                pred_flip = (probs_flip * self.bins).sum(dim=1).item()
-                return (pred_orig + pred_flip) / 2.0
-            return pred_orig
+                # Horizontal anatomical flip
+                flipped = torch.flip(tensor, dims=[-1])
+                outs_flip = self.model_axial(flipped)
+                probs_flip = torch.softmax(outs_flip, dim=1)
+                pred_flip = float(torch.sum(probs_flip * bins, dim=1).item())
+                return (pred_base + pred_flip) / 2.0
+                
+            return pred_base
 
     def _forward_coronal(self, tensor: torch.Tensor) -> float:
-        """Inferencia Coronal con Smooth L1 y TTA opcional."""
+        """Coronal inference with direct regression and optional TTA."""
         if tensor.ndim == 3:
             tensor = tensor.unsqueeze(0)
         tensor = tensor.to(self.device)
         
         with torch.no_grad():
-            outs = self.model_coronal(tensor)
-            pred_orig = outs[0].view(-1).item() if isinstance(outs, (list, tuple)) else outs.view(-1).item()
+            pred_base = float(self.model_coronal(tensor).item())
             
             if self.use_tta:
-                # TTA: Flip horizontal
-                tensor_flip = torch.flip(tensor, dims=[-1])
-                outs_flip = self.model_coronal(tensor_flip)
-                pred_flip = outs_flip[0].view(-1).item() if isinstance(outs_flip, (list, tuple)) else outs_flip.view(-1).item()
-                return (pred_orig + pred_flip) / 2.0
-            return pred_orig
+                flipped = torch.flip(tensor, dims=[-1])
+                pred_flip = float(self.model_coronal(flipped).item())
+                return (pred_base + pred_flip) / 2.0
+                
+            return pred_base
 
     def _forward_sagittal(self, tensor: torch.Tensor) -> float:
-        """Inferencia Sagital continua con MSE (sin TTA para preservar asimetría hemisférica)."""
+        """Sagittal inference with direct regression."""
         if tensor.ndim == 3:
             tensor = tensor.unsqueeze(0)
         tensor = tensor.to(self.device)
         
         with torch.no_grad():
-            outs = self.model_sagittal(tensor)
-            return outs[0].view(-1).item() if isinstance(outs, (list, tuple)) else outs.view(-1).item()
+            return float(self.model_sagittal(tensor).item())
 
     def predict(self, tensors: Dict[str, torch.Tensor]) -> Dict[str, float]:
         """
-        Ejecuta la inferencia triplanar y el Ridge Stacker.
-        Retorna las predicciones individuales y la predicción final consolidada.
+        Executes full triplanar ensemble inference on input tensor dictionary.
+        Returns individual plane predictions and meta-learner stacked ensemble estimate.
         """
         pred_ax = self._forward_axial(tensors["axial"])
         pred_cor = self._forward_coronal(tensors["coronal"])
         pred_sag = self._forward_sagittal(tensors["sagittal"])
         
         X_stack = np.array([[pred_ax, pred_cor, pred_sag]], dtype=np.float32)
-        
-        if isinstance(self.stacker, dict) and "model" in self.stacker:
-            ridge_model = self.stacker["model"]
-        else:
-            ridge_model = self.stacker
-            
-        pred_ensemble = float(ridge_model.predict(X_stack)[0])
+        pred_ens = float(self.stacker.predict(X_stack)[0])
         
         return {
             "pred_axial": pred_ax,
             "pred_coronal": pred_cor,
             "pred_sagittal": pred_sag,
-            "pred_ensemble": pred_ensemble,
+            "pred_ensemble": pred_ens,
             "Pred_Axial": pred_ax,
             "Pred_Coronal": pred_cor,
             "Pred_Sagittal": pred_sag,
-            "Pred_Ensemble": pred_ensemble
+            "Pred_Ensemble": pred_ens
         }
