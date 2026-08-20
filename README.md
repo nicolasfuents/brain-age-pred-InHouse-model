@@ -47,12 +47,13 @@ conda activate brain_age_env
 
 ### 3. External Neuroimaging Dependencies (Preprocessing Pipeline)
 
-To ensure maximum anatomical fidelity and reproducibility, raw MRI scans (DICOM or native NIfTI) must be processed through the standardized `src/preprocessing/` pipeline. This requires the following standard neuroimaging tools in your system `PATH`:
+To ensure maximum anatomical fidelity and reproducibility, raw MRI scans (DICOM or native NIfTI) must be processed through the standardized `src/preprocessing/` pipeline (identical to the training cohort preprocessing). This requires the following standard neuroimaging tools in your system `PATH`:
 
-* **FSL** (`flirt`, `fslreorient2std`): 12-DOF rigid/affine registration to MNI152 (1mm).
-* **ANTs** (`N4BiasFieldCorrection`): B-spline non-parametric bias field correction.
-* **FreeSurfer / SynthStrip** (`mri_synthstrip`): Deep-learning intracranial skull stripping and brain mask generation.
-* **dcm2niix**: High-performance DICOM-to-NIfTI conversion.
+* **FSL** (tested with `v6.0.7.18`, compatible with `v6.0+`): `flirt`, `fslreorient2std`, `fslmaths` for 12-DOF affine registration and masking to MNI152 (1mm).
+* **ANTs** (tested with `v2.6.2`, compatible with `v2.4+`): `N4BiasFieldCorrection` for B-spline non-parametric bias field correction.
+* **FreeSurfer / SynthStrip** (tested with `v7.4.1`, compatible with `v7.0+`): `mri_synthstrip` for deep-learning intracranial skull stripping and brain mask generation.
+* **dcm2niix** (tested with `v1.0.20230411`): High-performance DICOM-to-NIfTI conversion.
+* **BrainPrep** (`v0.0.2`, CEA NeuroSpin): Quasiraw affine workflow automation (installed via `environment.yml`).
 
 *Fast Inference Optimization (`--skip-prep`):*
 If your volumes are already preprocessed, you can pass `--skip-prep` to bypass external neuroimaging tools and run inference directly using only Python and PyTorch.
