@@ -207,12 +207,14 @@ class XAIEngine:
                         
                 # Generate Top 10 ROI importance bar chart
                 chart_path = output_dir / f"roi_importance_{m_name}.png"
+                method_title = "Integrated Gradients" if m_name == "ig" else "Occlusion Sensitivity"
                 plot_top_rois_bar_chart(
                     roi_stats=roi_stats[m_name],
                     id2label=self.id2label,
-                    method_name=m_name.upper(),
+                    method_name=m_name,
+                    method_title=method_title,
                     out_path=chart_path,
-                    top_n=10
+                    patient_id=patient_id
                 )
             print(f"  * [✓] Top ROI importance charts saved to: {output_dir}")
             

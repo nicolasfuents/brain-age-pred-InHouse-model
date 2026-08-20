@@ -46,8 +46,9 @@ inference:
   batch_size: 1
 
 calibration:
-  alpha: -0.226305
-  beta: 16.582412
+  # Optional local calibration coefficients (null by default for uncalibrated raw BAG)
+  alpha: null
+  beta: null
 
 xai:
   ig_steps: 50

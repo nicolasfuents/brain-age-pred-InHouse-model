@@ -215,18 +215,19 @@ def run_single_subject(
     print(f"\n[+] Running triplanar inference with Test-Time Augmentation (TTA)...")
     predictor = TriplanarPredictor(checkpoints_dir=checkpoints_dir, use_tta=True)
     predictions = predictor.predict(tensors)
-    
-    # 6. Age Bias Calibration (bc-BAG)
-    calibrator = AgeBiasCalibrator(
-        alpha=config["calibration"]["alpha"],
-        beta=config["calibration"]["beta"]
-    )
     pred_ens_val = float(predictions.get("pred_ensemble", predictions.get("Pred_Ensemble")))
-    bag_results = calibrator.calculate_bag(
-        pred_age=pred_ens_val,
-        chronological_age=chronological_age
-    )
     
+    # 6. Brain Age Gap (Raw BAG) & Optional Local Bias Correction
+    raw_bag_val = round(pred_ens_val - chronological_age, 2) if chronological_age is not None else None
+    
+    calib_cfg = config.get("calibration", {})
+    alpha = calib_cfg.get("alpha", None)
+    beta = calib_cfg.get("beta", None)
+    
+    bc_bag_val = None
+    if raw_bag_val is not None and alpha is not None and beta is not None:
+        bc_bag_val = round(raw_bag_val - (float(alpha) * chronological_age + float(beta)), 2)
+
     # Consolidate results
     final_results = {
         "subject_id": patient_id,
@@ -236,8 +237,8 @@ def run_single_subject(
         "pred_axial": round(float(predictions.get("pred_axial", predictions.get("Pred_Axial"))), 2),
         "pred_coronal": round(float(predictions.get("pred_coronal", predictions.get("Pred_Coronal"))), 2),
         "pred_sagittal": round(float(predictions.get("pred_sagittal", predictions.get("Pred_Sagittal"))), 2),
-        "raw_bag": round(bag_results["raw_bag"], 2) if bag_results["raw_bag"] is not None else None,
-        "bc_bag": round(bag_results["bc_bag"], 2) if bag_results["bc_bag"] is not None else None
+        "raw_bag": raw_bag_val,
+        "bc_bag": bc_bag_val
     }
     
     print("\n" + "="*80)
@@ -247,16 +248,26 @@ def run_single_subject(
         print(f"  * Chronological Age:          {chronological_age:.2f} years")
     print(f"  * Predicted Brain Age:        {final_results['predicted_age']:.2f} years")
     if chronological_age is not None:
-        print(f"  * Raw Brain Age Gap (BAG):    {final_results['raw_bag']:+.2f} years")
-        print(f"  * Calibrated Gap (bc-BAG):    {final_results['bc_bag']:+.2f} years (normative baseline)")
+        print(f"  * Brain Age Gap (Raw BAG):    {final_results['raw_bag']:+.2f} years")
+        if bc_bag_val is not None:
+            print(f"  * Calibrated Gap (bc-BAG):    {final_results['bc_bag']:+.2f} years (local calibration)")
     print("-"*80)
-    print(" Interpretation & Metric Definitions:")
-    print("  - Predicted Brain Age: Model-estimated biological age from triplanar MRI ensemble.")
+    print(" Interpretation & Guidelines:")
+    print("  - Predicted Brain Age: Model-estimated biological brain age from triplanar MRI.")
     if chronological_age is not None:
-        print("  - Raw BAG (Predicted - Chronological): Positive values suggest apparent accelerated")
-        print("    brain aging; negative values suggest apparent preservation or younger brain appearance.")
-        print("  - Calibrated bc-BAG: Bias-corrected gap adjusting for statistical regression-to-the-mean")
-        print("    across the lifespan using the normative healthy control baseline.")
+        print("  - Raw BAG (Predicted - Chronological): Difference between estimated brain age")
+        print("    and chronological age. Positive values indicate an older-appearing brain;")
+        print("    negative values indicate a younger-appearing brain.")
+        if bc_bag_val is None:
+            print("  - Scanner Calibration Note: This Raw BAG is uncalibrated for your specific scanner.")
+            print("    To adjust for scanner-specific bias and regression-to-the-mean, calibrate using")
+            print("    a local Healthy Control cohort (calibrate_local_scanner.py).")
+            print("    * Recommended sample size: N >= 30 (ideally N >= 50) healthy controls")
+            print("      spanning the age range of interest.")
+            print("    * Re-calibration is recommended periodically when adding new control batches")
+            print("      (e.g., every 50-100 new scans or following major scanner software/hardware updates).")
+        else:
+            print("  - Calibrated bc-BAG: Bias-corrected gap using your local scanner calibration parameters.")
     print("="*80)
 
     # Save quantitative metrics to JSON and CSV
