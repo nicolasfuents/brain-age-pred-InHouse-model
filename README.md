@@ -11,7 +11,7 @@
 
 Este repositorio contiene todo lo necesario para el cálculo de estimación de **Edad Cerebral (Brain Age Gap, BAG)**, calibración local de escáneres externos, y generación de **mapas de explicabilidad diagnóstica (Medical XAI)** a partir de resonancias magnéticas estructurales T1 (compatibilidad nativa con carpetas/archivos `.zip` **DICOM**, volúmenes **NIfTI** y tensores preprocesados **`.pt`**).
 
-El modelo implementa una arquitectura 2.5D optimizada que opera con solo 5 cortes representativos por cada plano anatómico (axial, coronal y sagital). Gracias a esto, la inferencia de las redes neuronales es extremadamente rápida y liviana (menos de un segundo por volumen en CPU o GPU). La mayor carga computacional del flujo de trabajo reside exclusivamente en la etapa de preprocesamiento (alineación a MNI152 y corrección de inhomogeneidad N4).
+El modelo implementa una arquitectura 2.5D optimizada que opera con solo 5 cortes representativos por cada plano anatómico (axial, coronal y sagital). Gracias a esto, la inferencia de las redes neuronales es sumamente rápida y liviana (aproximadamente 0.5 segundos por volumen en GPU). La mayor carga computacional del flujo de trabajo reside en la etapa de preprocesamiento (alineación a MNI152 y corrección de inhomogeneidad N4).
 
 ---
 
